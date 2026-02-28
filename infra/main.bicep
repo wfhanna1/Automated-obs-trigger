@@ -99,10 +99,10 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 resource appPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: 'obs-scheduler-plan-${nameSuffix}'
   location: location
-  kind: 'elastic'
+  kind: 'functionapp'
   sku: {
-    name: 'EP1'
-    tier: 'ElasticPremium'
+    name: 'Y1'
+    tier: 'Dynamic'
   }
   properties: {
     reserved: true   // Linux
