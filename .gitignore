@@ -1,6 +1,9 @@
 # Azure Functions local settings (contains secrets)
 local.settings.json
 
+# Server config with real hostnames/users — copy from servers.example.yaml
+config/servers.yaml
+
 # Python
 __pycache__/
 *.py[cod]
