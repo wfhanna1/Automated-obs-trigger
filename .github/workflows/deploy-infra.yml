@@ -31,11 +31,11 @@ on:
       github_raw_csv_url:
         description: 'GitHub raw URL for schedules/current_week.csv'
         required: true
-        default: 'https://raw.githubusercontent.com/OWNER/REPO/main/schedules/current_week.csv'
+        default: 'https://raw.githubusercontent.com/wfhanna1/Automated-obs-trigger/main/schedules/current_week.csv'
       servers_config_url:
         description: 'GitHub raw URL for config/servers.yaml'
         required: true
-        default: 'https://raw.githubusercontent.com/OWNER/REPO/main/config/servers.yaml'
+        default: 'https://raw.githubusercontent.com/wfhanna1/Automated-obs-trigger/main/config/servers.yaml'
 
 jobs:
   deploy:
