@@ -1,0 +1,4 @@
+server_id,date,start_time,stop_time,action,timezone
+win-server-1,2026-03-02,09:00,12:00,recording,America/New_York
+win-server-1,2026-03-04,14:00,17:00,recording,America/New_York
+mac-server-1,2026-03-03,10:00,15:00,streaming,America/Los_Angeles

@@ -1,0 +1,39 @@
+# Azure Functions local settings (contains secrets)
+local.settings.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Environment files
+.env
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+obs_scheduler.log
+
+# SSH keys (never commit these)
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# Azure Functions deployment artifacts
+.python_packages/
+.funcignore

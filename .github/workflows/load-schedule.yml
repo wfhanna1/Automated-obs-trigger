@@ -1,0 +1,51 @@
+name: Load OBS Schedule
+
+# Fires whenever current_week.csv is updated on the main branch.
+# Calls the LoadSchedule Azure Function, which reads the new CSV from GitHub
+# and enqueues start/stop Service Bus messages for each session.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "schedules/current_week.csv"
+
+  # Allow manual trigger from the GitHub Actions UI (useful for debugging)
+  workflow_dispatch:
+
+jobs:
+  trigger-load-schedule:
+    name: Trigger LoadSchedule Azure Function
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Call LoadSchedule HTTP endpoint
+        run: |
+          HTTP_STATUS=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
+            -X POST \
+            "${{ secrets.AZURE_FUNCTION_BASE_URL }}/api/load-schedule?code=${{ secrets.AZURE_FUNCTION_KEY }}" \
+            -H "Content-Type: application/json")
+
+          echo "--- Function response ---"
+          cat /tmp/response.txt
+          echo ""
+          echo "HTTP status: $HTTP_STATUS"
+
+          # Fail the workflow if the function returned an error status
+          if [ "$HTTP_STATUS" -ge 400 ]; then
+            echo "LoadSchedule function returned HTTP $HTTP_STATUS — check the response above."
+            exit 1
+          fi
+
+# ---------------------------------------------------------------------------
+# Required GitHub repository secrets (Settings → Secrets → Actions):
+#
+#   AZURE_FUNCTION_BASE_URL
+#     The base URL of your Azure Function App, e.g.:
+#     https://obs-scheduler.azurewebsites.net
+#
+#   AZURE_FUNCTION_KEY
+#     The function-level API key (found in Azure Portal →
+#     Function App → Functions → LoadSchedule → Function Keys).
+# ---------------------------------------------------------------------------
