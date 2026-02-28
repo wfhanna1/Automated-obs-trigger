@@ -1,0 +1,17 @@
+{
+  "lint": {
+    "command": "python -m ruff check .",
+    "failureMessage": "Ruff linting failed. Run 'ruff check --fix .' to auto-fix."
+  },
+  "typecheck": {
+    "command": "python -m mypy src function_app.py --ignore-missing-imports",
+    "failureMessage": "Mypy type checking failed. Fix type errors before marking complete."
+  },
+  "test": {
+    "command": "python -m pytest tests/unit tests/integration -q --ignore=tests/e2e",
+    "failureMessage": "pytest failed. All unit and integration tests must pass."
+  },
+  "lintExtensions": [".py"],
+  "lintFileCommand": "python -m ruff check",
+  "lintFixHint": "Run 'ruff check --fix' to auto-fix style issues."
+}

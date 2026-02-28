@@ -1,0 +1,71 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "teammateMode": "auto",
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest*)",
+      "Bash(python -m mypy*)",
+      "Bash(python -m ruff*)",
+      "Bash(python -m pip*)",
+      "Bash(pip install*)",
+      "Bash(pip-audit*)",
+      "Bash(az *)",
+      "Bash(func *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git checkout*)",
+      "Bash(git merge*)",
+      "Bash(gh *)"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/wasimhanna/Code/Automated-obs-trigger/scripts/validate-file-ownership.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/wasimhanna/Code/Automated-obs-trigger/scripts/post-edit-lint.sh"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/wasimhanna/Code/Automated-obs-trigger/scripts/task-completed-gate.sh"
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/wasimhanna/Code/Automated-obs-trigger/scripts/task-completed-gate.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
