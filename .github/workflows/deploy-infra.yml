@@ -1,0 +1,99 @@
+name: Deploy Azure Infrastructure
+
+# Run manually from the Actions tab whenever you need to (re-)provision Azure resources.
+#
+# Before running, add these secrets to your GitHub repository
+# (Settings → Secrets and variables → Actions → New repository secret):
+#
+#   AZURE_CREDENTIALS   — JSON block:
+#                         {
+#                           "clientId":       "<appId>",
+#                           "clientSecret":   "<password>",
+#                           "tenantId":       "<tenant>",
+#                           "subscriptionId": "<your-azure-subscription-id>"
+#                         }
+#
+# After this workflow succeeds, add two more secrets for the schedule workflow:
+#   AZURE_FUNCTION_BASE_URL  — e.g. https://obs-scheduler-<suffix>.azurewebsites.net
+#   AZURE_FUNCTION_KEY       — copy from Azure Portal → Function App → App keys
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_group:
+        description: 'Resource Group name (created if absent)'
+        required: true
+        default: 'obs-scheduler-rg'
+      location:
+        description: 'Azure region'
+        required: true
+        default: 'eastus'
+      github_raw_csv_url:
+        description: 'GitHub raw URL for schedules/current_week.csv'
+        required: true
+        default: 'https://raw.githubusercontent.com/OWNER/REPO/main/schedules/current_week.csv'
+      servers_config_url:
+        description: 'GitHub raw URL for config/servers.yaml'
+        required: true
+        default: 'https://raw.githubusercontent.com/OWNER/REPO/main/config/servers.yaml'
+
+jobs:
+  deploy:
+    name: Provision Azure Resources
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Create Resource Group (idempotent)
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az group create \
+              --name "${{ inputs.resource_group }}" \
+              --location "${{ inputs.location }}" \
+              --output table
+
+      - name: Deploy Bicep template
+        uses: azure/arm-deploy@v2
+        id: deploy
+        with:
+          subscriptionId: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          resourceGroupName: ${{ inputs.resource_group }}
+          template: ./infra/main.bicep
+          parameters: >
+            githubRawCsvUrl=${{ inputs.github_raw_csv_url }}
+            serversConfigUrl=${{ inputs.servers_config_url }}
+          failOnStdErr: false
+
+      - name: Print deployment outputs
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "  Deployment complete — next steps:"
+          echo "=========================================="
+          echo ""
+          echo "Function App URL : ${{ steps.deploy.outputs.functionAppUrl }}"
+          echo "Key Vault URI    : ${{ steps.deploy.outputs.keyVaultUri }}"
+          echo "Service Bus NS   : ${{ steps.deploy.outputs.serviceBusName }}"
+          echo ""
+          echo "1. Add GitHub secret AZURE_FUNCTION_BASE_URL = ${{ steps.deploy.outputs.functionAppUrl }}"
+          echo "2. Add GitHub secret AZURE_FUNCTION_KEY = (get from Azure Portal → Function App → App keys)"
+          echo "3. Upload SSH private keys and OBS WS passwords to Key Vault:"
+          echo "   az keyvault secret set --vault-name ${{ steps.deploy.outputs.keyVaultName }} --name ssh-key-win-server-1 --value \"\$(base64 -w0 < ~/.ssh/win_server_key.pem)\""
+          echo "   az keyvault secret set --vault-name ${{ steps.deploy.outputs.keyVaultName }} --name obs-ws-password-win-server-1 --value 'YOUR_OBS_WS_PASSWORD'"
+          echo "4. Fill in real host/user values in config/servers.yaml, then push to main."
+          echo ""
+
+      - name: Log out of Azure
+        if: always()
+        run: az logout
