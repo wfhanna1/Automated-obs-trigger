@@ -13,6 +13,7 @@ Two functions:
       either starts or stops OBS recording/streaming via the WebSocket API.
 """
 
+import base64
 import json
 import logging
 import os
@@ -220,7 +221,7 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
         kv_uri = _get_env("KEY_VAULT_URI")
         # Key Vault secret names use hyphens; server IDs may use underscores.
         kv_id = server_id.replace("_", "-")
-        ssh_key_pem = _get_kv_secret(kv_uri, f"ssh-key-{kv_id}")
+        ssh_key_pem = base64.b64decode(_get_kv_secret(kv_uri, f"ssh-key-{kv_id}")).decode("utf-8")
         obs_password = _get_kv_secret(kv_uri, f"obs-ws-password-{kv_id}")
     except Exception as exc:
         logger.error("Failed to retrieve secrets from Key Vault: %s", exc)
