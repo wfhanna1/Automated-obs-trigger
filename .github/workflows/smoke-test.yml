@@ -1,0 +1,94 @@
+name: Smoke Test - OBS Service Bus Pipeline
+
+# Validates the function deployment by sending a real Service Bus message
+# and confirming the OBSControl function consumes it without dead-lettering it.
+# If dead-lettered, the workflow fetches the exception from App Insights and
+# exits red so the failure is immediately visible in the Actions UI.
+#
+# Required GitHub secrets:
+#   AZURE_CREDENTIALS             -- JSON block used by azure/login@v2:
+#                                    {
+#                                      "clientId":       "<appId>",
+#                                      "clientSecret":   "<password>",
+#                                      "tenantId":       "<tenant>",
+#                                      "subscriptionId": "<subscriptionId>"
+#                                    }
+#   AZURE_SERVICE_BUS_CONNECTION  -- Primary connection string for the Service Bus
+#                                    namespace. Fetch with:
+#                                    az servicebus namespace authorization-rule keys list \
+#                                      --resource-group obs-scheduler-rg \
+#                                      --namespace obs-scheduler-xheofbriqbtrw \
+#                                      --name obs-functions \
+#                                      --query primaryConnectionString -o tsv
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_id:
+        description: 'Server ID to target (must match an entry in servers.yaml)'
+        default: 'win-server-1'
+        required: false
+      action:
+        description: 'OBS action: recording or streaming'
+        default: 'recording'
+        required: false
+      command:
+        description: 'Command to send: start or stop'
+        default: 'start'
+        required: false
+
+  workflow_run:
+    workflows: ["Deploy Azure Functions"]
+    types:
+      - completed
+
+jobs:
+  smoke-test:
+    name: Service Bus Smoke Test
+    runs-on: ubuntu-latest
+    # For workflow_run triggers, only run when the deployment succeeded.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install azure-servicebus
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Resolve test parameters
+        id: params
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "server_id=${{ inputs.server_id }}" >> $GITHUB_OUTPUT
+            echo "action=${{ inputs.action }}" >> $GITHUB_OUTPUT
+            echo "command=${{ inputs.command }}" >> $GITHUB_OUTPUT
+          else
+            echo "server_id=win-server-1" >> $GITHUB_OUTPUT
+            echo "action=recording" >> $GITHUB_OUTPUT
+            echo "command=start" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run smoke test
+        run: |
+          python scripts/smoke_test.py \
+            --sb-connection-string "${{ secrets.AZURE_SERVICE_BUS_CONNECTION }}" \
+            --app-insights-name obs-scheduler-ai-xheofbriqbtrw \
+            --resource-group obs-scheduler-rg \
+            --server-id "${{ steps.params.outputs.server_id }}" \
+            --action "${{ steps.params.outputs.action }}" \
+            --command "${{ steps.params.outputs.command }}"
+
+      - name: Log out of Azure
+        if: always()
+        run: az logout
