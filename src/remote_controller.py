@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import io
 import logging
-import os
-import tempfile
+import socket
+import threading
 import time
 from contextlib import contextmanager
 
 import paramiko
-from sshtunnel import SSHTunnelForwarder
 
 logger = logging.getLogger(__name__)
 
@@ -154,17 +153,40 @@ def kill_obs(host: str, port: int, user: str, key_pem: str, platform: str) -> No
         client.close()
 
 
+def _forward(local_sock: socket.socket, channel: paramiko.Channel) -> None:
+    """Bidirectionally forward data between a local socket and a paramiko channel."""
+    channel.settimeout(0.5)
+
+    def _pipe(src_recv, dst_send) -> None:
+        try:
+            while True:
+                data = src_recv(1024)
+                if not data:
+                    break
+                dst_send(data)
+        except (OSError, EOFError):
+            pass
+
+    t1 = threading.Thread(target=_pipe, args=(local_sock.recv, channel.sendall), daemon=True)
+    t2 = threading.Thread(target=_pipe, args=(channel.recv, local_sock.sendall), daemon=True)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    local_sock.close()
+    channel.close()
+
+
 @contextmanager
 def obs_tunnel(host: str, ssh_port: int, user: str, key_pem: str, ws_port: int):
     """
     Context manager that opens an SSH tunnel to the remote machine's OBS WebSocket port.
 
+    Uses paramiko.Transport directly — no sshtunnel dependency.
+
     Usage:
         with obs_tunnel(host, ssh_port, user, key_pem, ws_port) as local_port:
             client = obs.ReqClient(host='localhost', port=local_port, ...)
-
-    The SSH private key is written to a temporary file (sshtunnel requires a file
-    path), used for the duration of the context, then securely deleted.
 
     Args:
         host:     Remote hostname or IP.
@@ -176,30 +198,45 @@ def obs_tunnel(host: str, ssh_port: int, user: str, key_pem: str, ws_port: int):
     Yields:
         int: The local port to connect to (tunnelled to remote ws_port).
     """
-    # Write PEM key to a temp file; sshtunnel/paramiko require a file path.
-    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".pem", delete=False)
-    try:
-        tmp.write(key_pem)
-        tmp.flush()
-        tmp.close()
-        os.chmod(tmp.name, 0o600)
+    pkey = paramiko.RSAKey.from_private_key(io.StringIO(key_pem))
+    transport = paramiko.Transport((host, ssh_port))
+    transport.connect(username=user, pkey=pkey)
 
-        tunnel = SSHTunnelForwarder(
-            (host, ssh_port),
-            ssh_username=user,
-            ssh_pkey=tmp.name,
-            remote_bind_address=("127.0.0.1", ws_port),
-        )
-        tunnel.start()
-        logger.debug(
-            "SSH tunnel open: localhost:%d → %s:%d", tunnel.local_bind_port, host, ws_port
-        )
-        try:
-            yield tunnel.local_bind_port
-        finally:
-            tunnel.stop()
-            logger.debug("SSH tunnel closed to %s.", host)
+    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_sock.bind(("127.0.0.1", 0))
+    local_port = server_sock.getsockname()[1]
+    server_sock.listen(5)
+    server_sock.settimeout(0.5)
+
+    stop_event = threading.Event()
+
+    def _accept_loop() -> None:
+        while not stop_event.is_set():
+            try:
+                local_conn, _ = server_sock.accept()
+                channel = transport.open_channel(
+                    "direct-tcpip", ("127.0.0.1", ws_port), ("127.0.0.1", 0)
+                )
+                threading.Thread(
+                    target=_forward, args=(local_conn, channel), daemon=True
+                ).start()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+    accept_thread = threading.Thread(target=_accept_loop, daemon=True)
+    accept_thread.start()
+
+    try:
+        logger.debug("SSH tunnel open: localhost:%d → %s:%d", local_port, host, ws_port)
+        yield local_port
     finally:
-        os.unlink(tmp.name)
+        stop_event.set()
+        server_sock.close()
+        accept_thread.join(timeout=2)
+        transport.close()
+        logger.debug("SSH tunnel closed to %s.", host)
 
 

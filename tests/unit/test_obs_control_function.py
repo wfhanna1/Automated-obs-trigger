@@ -9,7 +9,7 @@ import base64
 import json
 import sys
 import os
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 

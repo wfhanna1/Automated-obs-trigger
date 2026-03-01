@@ -3,7 +3,7 @@ tests/unit/test_remote_controller.py
 
 Unit tests for src/remote_controller.py
 
-All external dependencies (paramiko, sshtunnel, time, tempfile, os) are mocked.
+All external dependencies (paramiko, time) are mocked.
 """
 
 import sys
@@ -381,168 +381,139 @@ class TestKillObs:
         cmd_arg = mock_client.exec_command.call_args[0][0]
         assert "obs64" in cmd_arg
 
-
 # ---------------------------------------------------------------------------
-# obs_tunnel tests
+# obs_tunnel — paramiko.Transport-based implementation
 # ---------------------------------------------------------------------------
 
-class TestObsTunnel:
 
-    @patch("remote_controller.os.unlink")
-    @patch("remote_controller.os.chmod")
-    @patch("remote_controller.SSHTunnelForwarder")
-    @patch("remote_controller.tempfile.NamedTemporaryFile")
+class TestObsTunnelParamiko:
+    """
+    obs_tunnel must use paramiko.Transport directly — no sshtunnel dependency.
+
+    Behaviours under test:
+      - yields the local port that the server socket was bound to
+      - creates a paramiko.Transport to (host, ssh_port)
+      - authenticates with the correct username and RSA key
+      - closes the transport on clean exit
+      - closes the transport even when an exception is raised inside the with-block
+      - forwards to the correct remote ws_port (open_channel called with ws_port)
+    """
+
+    def _setup_mocks(self, mock_transport_class, mock_rsa_key_class, mock_socket_class):
+        """Wire up standard happy-path mocks and return the key objects."""
+        mock_transport = MagicMock()
+        mock_transport_class.return_value = mock_transport
+
+        mock_pkey = MagicMock()
+        mock_rsa_key_class.from_private_key.return_value = mock_pkey
+
+        # Server socket: bind() sets getsockname() to return a free port.
+        mock_server_sock = MagicMock()
+        mock_server_sock.getsockname.return_value = ("127.0.0.1", 54321)
+        # accept() raises OSError after the first call so the accept loop exits.
+        mock_server_sock.accept.side_effect = OSError("closed")
+        mock_socket_class.return_value = mock_server_sock
+
+        return mock_transport, mock_pkey, mock_server_sock
+
+    @patch("remote_controller.socket.socket")
+    @patch("remote_controller.paramiko.RSAKey")
+    @patch("remote_controller.paramiko.Transport")
     def test_yields_local_bind_port(
-        self, mock_tmp_file, mock_forwarder_class, mock_chmod, mock_unlink, fake_pem
+        self, mock_transport_class, mock_rsa_key_class, mock_socket_class, fake_pem
     ):
-        mock_tmp = MagicMock()
-        mock_tmp.name = "/tmp/fake_key.pem"
-        mock_tmp_file.return_value = mock_tmp
-
-        mock_tunnel = MagicMock()
-        mock_tunnel.local_bind_port = 12345
-        mock_forwarder_class.return_value = mock_tunnel
+        """The yielded value must be the port the server socket bound to."""
+        self._setup_mocks(mock_transport_class, mock_rsa_key_class, mock_socket_class)
 
         with obs_tunnel("host", 22, "user", fake_pem, 4455) as port:
-            assert port == 12345
+            assert port == 54321
 
-    @patch("remote_controller.os.unlink")
-    @patch("remote_controller.os.chmod")
-    @patch("remote_controller.SSHTunnelForwarder")
-    @patch("remote_controller.tempfile.NamedTemporaryFile")
-    def test_tunnel_started_on_enter(
-        self, mock_tmp_file, mock_forwarder_class, mock_chmod, mock_unlink, fake_pem
+    @patch("remote_controller.socket.socket")
+    @patch("remote_controller.paramiko.RSAKey")
+    @patch("remote_controller.paramiko.Transport")
+    def test_transport_created_with_host_and_ssh_port(
+        self, mock_transport_class, mock_rsa_key_class, mock_socket_class, fake_pem
     ):
-        mock_tmp = MagicMock()
-        mock_tmp.name = "/tmp/fake_key.pem"
-        mock_tmp_file.return_value = mock_tmp
+        """paramiko.Transport must be constructed with (host, ssh_port)."""
+        self._setup_mocks(mock_transport_class, mock_rsa_key_class, mock_socket_class)
 
-        mock_tunnel = MagicMock()
-        mock_tunnel.local_bind_port = 12345
-        mock_forwarder_class.return_value = mock_tunnel
-
-        with obs_tunnel("host", 22, "user", fake_pem, 4455):
-            mock_tunnel.start.assert_called_once()
-
-    @patch("remote_controller.os.unlink")
-    @patch("remote_controller.os.chmod")
-    @patch("remote_controller.SSHTunnelForwarder")
-    @patch("remote_controller.tempfile.NamedTemporaryFile")
-    def test_tunnel_stopped_on_exit(
-        self, mock_tmp_file, mock_forwarder_class, mock_chmod, mock_unlink, fake_pem
-    ):
-        mock_tmp = MagicMock()
-        mock_tmp.name = "/tmp/fake_key.pem"
-        mock_tmp_file.return_value = mock_tmp
-
-        mock_tunnel = MagicMock()
-        mock_tunnel.local_bind_port = 12345
-        mock_forwarder_class.return_value = mock_tunnel
-
-        with obs_tunnel("host", 22, "user", fake_pem, 4455):
+        with obs_tunnel("myhost", 2222, "user", fake_pem, 4455):
             pass
 
-        mock_tunnel.stop.assert_called_once()
+        mock_transport_class.assert_called_once_with(("myhost", 2222))
 
-    @patch("remote_controller.os.unlink")
-    @patch("remote_controller.os.chmod")
-    @patch("remote_controller.SSHTunnelForwarder")
-    @patch("remote_controller.tempfile.NamedTemporaryFile")
-    def test_temp_file_deleted_on_exit(
-        self, mock_tmp_file, mock_forwarder_class, mock_chmod, mock_unlink, fake_pem
+    @patch("remote_controller.socket.socket")
+    @patch("remote_controller.paramiko.RSAKey")
+    @patch("remote_controller.paramiko.Transport")
+    def test_transport_authenticated_with_correct_user_and_key(
+        self, mock_transport_class, mock_rsa_key_class, mock_socket_class, fake_pem
     ):
-        mock_tmp = MagicMock()
-        mock_tmp.name = "/tmp/fake_key.pem"
-        mock_tmp_file.return_value = mock_tmp
+        """transport.connect() must receive the correct username and RSA key."""
+        mock_transport, mock_pkey, _ = self._setup_mocks(
+            mock_transport_class, mock_rsa_key_class, mock_socket_class
+        )
 
-        mock_tunnel = MagicMock()
-        mock_tunnel.local_bind_port = 12345
-        mock_forwarder_class.return_value = mock_tunnel
+        with obs_tunnel("host", 22, "myuser", fake_pem, 4455):
+            pass
+
+        mock_transport.connect.assert_called_once_with(username="myuser", pkey=mock_pkey)
+
+    @patch("remote_controller.socket.socket")
+    @patch("remote_controller.paramiko.RSAKey")
+    @patch("remote_controller.paramiko.Transport")
+    def test_transport_closed_on_clean_exit(
+        self, mock_transport_class, mock_rsa_key_class, mock_socket_class, fake_pem
+    ):
+        """transport.close() must be called when the with-block exits normally."""
+        mock_transport, _, _ = self._setup_mocks(
+            mock_transport_class, mock_rsa_key_class, mock_socket_class
+        )
 
         with obs_tunnel("host", 22, "user", fake_pem, 4455):
             pass
 
-        mock_unlink.assert_called_once_with("/tmp/fake_key.pem")
+        mock_transport.close.assert_called_once()
 
-    @patch("remote_controller.os.unlink")
-    @patch("remote_controller.os.chmod")
-    @patch("remote_controller.SSHTunnelForwarder")
-    @patch("remote_controller.tempfile.NamedTemporaryFile")
-    def test_pem_key_permissions_set_to_600(
-        self, mock_tmp_file, mock_forwarder_class, mock_chmod, mock_unlink, fake_pem
+    @patch("remote_controller.socket.socket")
+    @patch("remote_controller.paramiko.RSAKey")
+    @patch("remote_controller.paramiko.Transport")
+    def test_transport_closed_on_exception(
+        self, mock_transport_class, mock_rsa_key_class, mock_socket_class, fake_pem
     ):
-        mock_tmp = MagicMock()
-        mock_tmp.name = "/tmp/fake_key.pem"
-        mock_tmp_file.return_value = mock_tmp
-
-        mock_tunnel = MagicMock()
-        mock_tunnel.local_bind_port = 12345
-        mock_forwarder_class.return_value = mock_tunnel
-
-        with obs_tunnel("host", 22, "user", fake_pem, 4455):
-            pass
-
-        mock_chmod.assert_called_once_with("/tmp/fake_key.pem", 0o600)
-
-    @patch("remote_controller.os.unlink")
-    @patch("remote_controller.os.chmod")
-    @patch("remote_controller.SSHTunnelForwarder")
-    @patch("remote_controller.tempfile.NamedTemporaryFile")
-    def test_forwarder_configured_with_correct_remote_port(
-        self, mock_tmp_file, mock_forwarder_class, mock_chmod, mock_unlink, fake_pem
-    ):
-        mock_tmp = MagicMock()
-        mock_tmp.name = "/tmp/fake_key.pem"
-        mock_tmp_file.return_value = mock_tmp
-
-        mock_tunnel = MagicMock()
-        mock_tunnel.local_bind_port = 12345
-        mock_forwarder_class.return_value = mock_tunnel
-
-        with obs_tunnel("host", 22, "user", fake_pem, 9999):
-            pass
-
-        _, kwargs = mock_forwarder_class.call_args
-        assert kwargs["remote_bind_address"] == ("127.0.0.1", 9999)
-
-    @patch("remote_controller.os.unlink")
-    @patch("remote_controller.os.chmod")
-    @patch("remote_controller.SSHTunnelForwarder")
-    @patch("remote_controller.tempfile.NamedTemporaryFile")
-    def test_tunnel_stopped_and_temp_file_deleted_on_exception(
-        self, mock_tmp_file, mock_forwarder_class, mock_chmod, mock_unlink, fake_pem
-    ):
-        mock_tmp = MagicMock()
-        mock_tmp.name = "/tmp/fake_key.pem"
-        mock_tmp_file.return_value = mock_tmp
-
-        mock_tunnel = MagicMock()
-        mock_tunnel.local_bind_port = 12345
-        mock_forwarder_class.return_value = mock_tunnel
+        """transport.close() must be called even when an exception escapes the block."""
+        mock_transport, _, _ = self._setup_mocks(
+            mock_transport_class, mock_rsa_key_class, mock_socket_class
+        )
 
         with pytest.raises(RuntimeError):
             with obs_tunnel("host", 22, "user", fake_pem, 4455):
-                raise RuntimeError("something failed inside the tunnel")
+                raise RuntimeError("boom inside tunnel")
 
-        mock_tunnel.stop.assert_called_once()
-        mock_unlink.assert_called_once_with("/tmp/fake_key.pem")
+        mock_transport.close.assert_called_once()
 
-    @patch("remote_controller.os.unlink")
-    @patch("remote_controller.os.chmod")
-    @patch("remote_controller.SSHTunnelForwarder")
-    @patch("remote_controller.tempfile.NamedTemporaryFile")
-    def test_pem_key_written_to_temp_file(
-        self, mock_tmp_file, mock_forwarder_class, mock_chmod, mock_unlink, fake_pem
+    @patch("remote_controller.socket.socket")
+    @patch("remote_controller.paramiko.RSAKey")
+    @patch("remote_controller.paramiko.Transport")
+    def test_open_channel_targets_correct_remote_ws_port(
+        self, mock_transport_class, mock_rsa_key_class, mock_socket_class, fake_pem
     ):
-        mock_tmp = MagicMock()
-        mock_tmp.name = "/tmp/fake_key.pem"
-        mock_tmp_file.return_value = mock_tmp
+        """When a local connection arrives, open_channel must target ws_port on the remote."""
+        mock_transport, _, mock_server_sock = self._setup_mocks(
+            mock_transport_class, mock_rsa_key_class, mock_socket_class
+        )
 
-        mock_tunnel = MagicMock()
-        mock_tunnel.local_bind_port = 12345
-        mock_forwarder_class.return_value = mock_tunnel
+        # Simulate one incoming local connection before raising OSError to stop the loop.
+        mock_local_conn = MagicMock()
+        mock_local_conn.recv.return_value = b""  # signal EOF so forwarder exits
+        mock_server_sock.accept.side_effect = [(mock_local_conn, ("127.0.0.1", 9999)), OSError("closed")]
 
-        with obs_tunnel("host", 22, "user", fake_pem, 4455):
-            pass
+        mock_channel = MagicMock()
+        mock_channel.recv.return_value = b""
+        mock_transport.open_channel.return_value = mock_channel
 
-        mock_tmp.write.assert_called_once_with(fake_pem)
+        with obs_tunnel("host", 22, "user", fake_pem, 7777):
+            import time as _time
+            _time.sleep(0.05)  # let accept thread process one connection
+
+        dest = mock_transport.open_channel.call_args[0][1]  # (dest_addr, dest_port)
+        assert dest[1] == 7777
