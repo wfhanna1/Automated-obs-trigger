@@ -113,9 +113,14 @@ def launch_obs(host: str, port: int, user: str, key_pem: str,
             # (Session 0) and cannot access the active desktop, so GUI apps like OBS
             # never start. Task Scheduler with LogonType Interactive runs the process
             # in the logged-on user's desktop session instead.
+            # Derive the directory containing obs64.exe so Task Scheduler sets
+            # the working directory correctly. Without this, sched tasks default
+            # to C:\Windows\System32 and OBS cannot find its locale files.
+            obs_dir = obs_path.rsplit("\\", 1)[0]
             register_cmd = (
                 f'Register-ScheduledTask -TaskName "OBSAutoStart" '
-                f'-Action (New-ScheduledTaskAction -Execute "{obs_path}") '
+                f'-Action (New-ScheduledTaskAction -Execute "{obs_path}" '
+                f'-WorkingDirectory "{obs_dir}") '
                 f'-Principal (New-ScheduledTaskPrincipal '
                 f'-UserId $env:USERNAME -LogonType Interactive) '
                 f'-Force | Out-Null'

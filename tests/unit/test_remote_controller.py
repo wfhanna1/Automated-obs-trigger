@@ -262,6 +262,21 @@ class TestLaunchObs:
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")
+    def test_windows_task_sets_working_directory_to_obs_dir(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "windows",
+                   r"C:\Program Files\obs-studio\bin\64bit\obs64.exe")
+
+        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
+        assert r"C:\Program Files\obs-studio\bin\64bit" in register_cmd
+        assert "WorkingDirectory" in register_cmd
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
     def test_launches_obs_on_mac_with_nohup_command(
         self, mock_make_client, mock_sleep, fake_pem
     ):
