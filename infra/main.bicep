@@ -5,6 +5,8 @@
 //   - Storage Blob Container   (Flex Consumption deployment packages)
 //   - Service Bus Namespace    (Standard tier) + Queue "obs-jobs"
 //   - Key Vault                (Standard, RBAC auth)
+//   - Log Analytics Workspace  (backing store for Application Insights)
+//   - Application Insights     (workspace-based; captures logs, traces, exceptions)
 //   - App Service Plan         (Flex Consumption FC1, Linux)
 //   - Function App             (Python 3.11, system-assigned Managed Identity)
 //   - Role Assignment          (Key Vault Secrets User → Function App identity)
@@ -101,6 +103,33 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 }
 
 // ---------------------------------------------------------------------------
+// Log Analytics Workspace  (backing store for App Insights)
+// ---------------------------------------------------------------------------
+
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+  name: 'obs-scheduler-logs-${nameSuffix}'
+  location: location
+  properties: {
+    sku: { name: 'PerGB2018' }
+    retentionInDays: 30
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Application Insights  (workspace-based; classic mode is deprecated)
+// ---------------------------------------------------------------------------
+
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: 'obs-scheduler-ai-${nameSuffix}'
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: logAnalytics.id
+  }
+}
+
+// ---------------------------------------------------------------------------
 // App Service Plan  (Flex Consumption FC1, Linux)
 // ---------------------------------------------------------------------------
 
@@ -138,6 +167,7 @@ resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'KEY_VAULT_URI',                    value: keyVault.properties.vaultUri }
         { name: 'GITHUB_RAW_CSV_URL',               value: githubRawCsvUrl }
         { name: 'SERVERS_CONFIG_URL',               value: serversConfigUrl }
+        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
       ]
     }
     functionAppConfig: {
@@ -198,9 +228,11 @@ resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
 // Outputs  (used by deploy-infra.yml to print next steps)
 // ---------------------------------------------------------------------------
 
-output functionAppName string = funcApp.name
-output functionAppUrl  string = 'https://${funcApp.properties.defaultHostName}'
-output keyVaultName    string = keyVault.name
-output keyVaultUri     string = keyVault.properties.vaultUri
-output serviceBusName  string = sbNamespace.name
-output storageName     string = storage.name
+output functionAppName  string = funcApp.name
+output functionAppUrl   string = 'https://${funcApp.properties.defaultHostName}'
+output keyVaultName     string = keyVault.name
+output keyVaultUri      string = keyVault.properties.vaultUri
+output serviceBusName   string = sbNamespace.name
+output storageName      string = storage.name
+output appInsightsName  string = appInsights.name
+output logAnalyticsName string = logAnalytics.name
