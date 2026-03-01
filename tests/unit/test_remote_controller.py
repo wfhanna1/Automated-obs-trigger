@@ -222,7 +222,7 @@ class TestLaunchObs:
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")
-    def test_launches_obs_on_windows_with_powershell_command(
+    def test_launches_obs_on_windows_with_task_scheduler(
         self, mock_make_client, mock_sleep, fake_pem
     ):
         mock_client = self._make_connected_client()
@@ -230,9 +230,35 @@ class TestLaunchObs:
 
         launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
 
-        cmd_arg = mock_client.exec_command.call_args[0][0]
-        assert "powershell" in cmd_arg
-        assert "Start-Process" in cmd_arg
+        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
+        run_cmd = mock_client.exec_command.call_args_list[1][0][0]
+        assert "Register-ScheduledTask" in register_cmd
+        assert "Start-ScheduledTask" in run_cmd
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_windows_launch_makes_two_exec_command_calls(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
+
+        assert mock_client.exec_command.call_count == 2
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_windows_task_uses_interactive_logon_type(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
+
+        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
+        assert "Interactive" in register_cmd
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")
@@ -249,7 +275,7 @@ class TestLaunchObs:
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")
-    def test_includes_obs_path_in_windows_command(
+    def test_includes_obs_path_in_windows_register_command(
         self, mock_make_client, mock_sleep, fake_pem
     ):
         mock_client = self._make_connected_client()
@@ -257,8 +283,8 @@ class TestLaunchObs:
 
         launch_obs("host", 22, "user", fake_pem, "windows", r"C:\custom\obs64.exe")
 
-        cmd_arg = mock_client.exec_command.call_args[0][0]
-        assert r"C:\custom\obs64.exe" in cmd_arg
+        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
+        assert r"C:\custom\obs64.exe" in register_cmd
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")

@@ -109,15 +109,30 @@ def launch_obs(host: str, port: int, user: str, key_pem: str,
     client = _make_ssh_client(host, port, user, key_pem)
     try:
         if platform == "windows":
-            # Start-Process launches OBS detached; -WindowStyle Hidden keeps it background.
-            command = (
-                f'powershell -Command "Start-Process \'{obs_path}\' -WindowStyle Hidden"'
+            # Start-Process via an SSH exec channel runs in a non-interactive session
+            # (Session 0) and cannot access the active desktop, so GUI apps like OBS
+            # never start. Task Scheduler with LogonType Interactive runs the process
+            # in the logged-on user's desktop session instead.
+            register_cmd = (
+                f'Register-ScheduledTask -TaskName "OBSAutoStart" '
+                f'-Action (New-ScheduledTaskAction -Execute "{obs_path}") '
+                f'-Principal (New-ScheduledTaskPrincipal '
+                f'-UserId $env:USERNAME -LogonType Interactive) '
+                f'-Force | Out-Null'
             )
+            run_cmd = 'Start-ScheduledTask -TaskName "OBSAutoStart"'
+
+            _, err = _ssh_exec(client, register_cmd)
+            if err:
+                logger.warning("Task registration stderr on %s: %s", host, err)
+            _, err = _ssh_exec(client, run_cmd)
+            if err:
+                logger.warning("Task start stderr on %s: %s", host, err)
         else:
             # Mac: run detached via nohup so the SSH session can close cleanly.
             command = f"nohup '{obs_path}' --minimize-to-tray > /dev/null 2>&1 &"
+            _ssh_exec(client, command)
 
-        _ssh_exec(client, command)
         logger.info("OBS launch command sent to %s (%s). Waiting %ds for startup…",
                     host, platform, OBS_LAUNCH_WAIT_SECONDS)
     finally:
