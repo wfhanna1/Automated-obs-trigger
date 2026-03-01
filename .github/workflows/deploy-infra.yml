@@ -27,7 +27,7 @@ on:
       location:
         description: 'Azure region'
         required: true
-        default: 'eastus'
+        default: 'eastus2'
       github_raw_csv_url:
         description: 'GitHub raw URL for schedules/current_week.csv'
         required: true
