@@ -133,7 +133,7 @@ resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
         // Flex Consumption uses identity-based host storage — no connection string
         { name: 'AzureWebJobsStorage__accountName', value: storage.name }
         { name: 'FUNCTIONS_EXTENSION_VERSION',      value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME',         value: 'python' }
+        // FUNCTIONS_WORKER_RUNTIME is not allowed; runtime is set in functionAppConfig
         { name: 'SERVICE_BUS_CONNECTION',           value: sbAuthRule.listKeys().primaryConnectionString }
         { name: 'KEY_VAULT_URI',                    value: keyVault.properties.vaultUri }
         { name: 'GITHUB_RAW_CSV_URL',               value: githubRawCsvUrl }
