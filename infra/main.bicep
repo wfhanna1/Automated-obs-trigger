@@ -2,11 +2,13 @@
 //
 // Resources deployed:
 //   - Storage Account          (Azure Functions runtime storage)
+//   - Storage Blob Container   (Flex Consumption deployment packages)
 //   - Service Bus Namespace    (Standard tier) + Queue "obs-jobs"
 //   - Key Vault                (Standard, RBAC auth)
-//   - App Service Plan         (Premium EP1, Linux — gives static outbound IPs)
+//   - App Service Plan         (Flex Consumption FC1, Linux)
 //   - Function App             (Python 3.11, system-assigned Managed Identity)
 //   - Role Assignment          (Key Vault Secrets User → Function App identity)
+//   - Role Assignment          (Storage Blob Data Contributor → Function App identity)
 //
 // Deploy via GitHub Actions (see .github/workflows/deploy-infra.yml)
 // or locally:
@@ -40,6 +42,12 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
   }
+}
+
+// Blob container required by Flex Consumption for deployment packages
+resource deployContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  name: '${storage.name}/default/deployments'
+  properties: { publicAccess: 'None' }
 }
 
 // ---------------------------------------------------------------------------
@@ -93,16 +101,15 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 }
 
 // ---------------------------------------------------------------------------
-// App Service Plan  (Premium EP1, Linux — enables static outbound IPs)
+// App Service Plan  (Flex Consumption FC1, Linux)
 // ---------------------------------------------------------------------------
 
 resource appPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: 'obs-scheduler-plan-${nameSuffix}'
   location: location
-  kind: 'functionapp'
   sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
+    name: 'FC1'
+    tier: 'FlexConsumption'
   }
   properties: {
     reserved: true   // Linux
@@ -113,8 +120,6 @@ resource appPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
 // Function App
 // ---------------------------------------------------------------------------
 
-var storageConnString = 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
-
 resource funcApp 'Microsoft.Web/sites@2023-01-01' = {
   name: 'obs-scheduler-${nameSuffix}'
   location: location
@@ -124,17 +129,33 @@ resource funcApp 'Microsoft.Web/sites@2023-01-01' = {
     serverFarmId: appPlan.id
     httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'Python|3.11'
       appSettings: [
-        { name: 'AzureWebJobsStorage',         value: storageConnString }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME',    value: 'python' }
-        { name: 'WEBSITE_RUN_FROM_PACKAGE',    value: '1' }
-        { name: 'SERVICE_BUS_CONNECTION',      value: sbAuthRule.listKeys().primaryConnectionString }
-        { name: 'KEY_VAULT_URI',               value: keyVault.properties.vaultUri }
-        { name: 'GITHUB_RAW_CSV_URL',          value: githubRawCsvUrl }
-        { name: 'SERVERS_CONFIG_URL',          value: serversConfigUrl }
+        // Flex Consumption uses identity-based host storage — no connection string
+        { name: 'AzureWebJobsStorage__accountName', value: storage.name }
+        { name: 'FUNCTIONS_EXTENSION_VERSION',      value: '~4' }
+        { name: 'FUNCTIONS_WORKER_RUNTIME',         value: 'python' }
+        { name: 'SERVICE_BUS_CONNECTION',           value: sbAuthRule.listKeys().primaryConnectionString }
+        { name: 'KEY_VAULT_URI',                    value: keyVault.properties.vaultUri }
+        { name: 'GITHUB_RAW_CSV_URL',               value: githubRawCsvUrl }
+        { name: 'SERVERS_CONFIG_URL',               value: serversConfigUrl }
       ]
+    }
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: '${storage.properties.primaryEndpoints.blob}deployments'
+          authentication: { type: 'SystemAssignedIdentity' }
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 10
+        instanceMemoryMB: 2048
+      }
+      runtime: {
+        name: 'python'
+        version: '3.11'
+      }
     }
   }
 }
@@ -151,6 +172,23 @@ resource kvRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   scope: keyVault
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    principalId: funcApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Role Assignment: Storage Blob Data Contributor → Function App Managed Identity
+// (required for Flex Consumption identity-based host storage)
+// ---------------------------------------------------------------------------
+
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+
+resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storage.id, funcApp.id, storageBlobDataContributorRoleId)
+  scope: storage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
     principalId: funcApp.identity.principalId
     principalType: 'ServicePrincipal'
   }
