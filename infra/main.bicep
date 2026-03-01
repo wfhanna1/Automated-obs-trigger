@@ -120,7 +120,7 @@ resource appPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
 // Function App
 // ---------------------------------------------------------------------------
 
-resource funcApp 'Microsoft.Web/sites@2023-01-01' = {
+resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
   name: 'obs-scheduler-${nameSuffix}'
   location: location
   kind: 'functionapp,linux'
