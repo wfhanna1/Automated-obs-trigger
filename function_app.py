@@ -65,7 +65,10 @@ def _get_kv_secret(kv_uri: str, secret_name: str) -> str:
     """Retrieve a secret from Azure Key Vault using Managed Identity."""
     credential = DefaultAzureCredential()
     client = SecretClient(vault_url=kv_uri, credential=credential)
-    return client.get_secret(secret_name).value
+    secret_value = client.get_secret(secret_name).value
+    if secret_value is None:
+        raise RuntimeError(f"Key Vault secret '{secret_name}' exists but has no value.")
+    return secret_value
 
 
 # ---------------------------------------------------------------------------
@@ -134,9 +137,9 @@ def load_schedule_function(req: func.HttpRequest) -> func.HttpResponse:
                         "action": entry.action,
                     }
                     try:
-                        msg = ServiceBusMessage(json.dumps(payload))
-                        msg.scheduled_enqueue_time_utc = scheduled_time.replace(tzinfo=None)
-                        sender.send_messages(msg)
+                        sb_msg = ServiceBusMessage(json.dumps(payload))
+                        sb_msg.scheduled_enqueue_time_utc = scheduled_time.replace(tzinfo=None)
+                        sender.send_messages(sb_msg)
                         logger.info(
                             "Enqueued %s/%s for server=%s at %s UTC.",
                             command, entry.action, entry.server_id, scheduled_time,

@@ -9,6 +9,8 @@ Expected CSV columns:
 Returns a list of ScheduleEntry objects with timezone-aware datetimes.
 """
 
+from __future__ import annotations
+
 import csv
 import io
 import logging

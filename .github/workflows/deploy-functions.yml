@@ -1,0 +1,71 @@
+name: Deploy Azure Functions
+
+# Deploys the Python function code to the existing Function App.
+# Triggered automatically when function code or dependencies change,
+# or manually from the Actions tab.
+#
+# Required GitHub secret:
+#   AZURE_CREDENTIALS — JSON block:
+#                       {
+#                         "clientId":       "<appId>",
+#                         "clientSecret":   "<password>",
+#                         "tenantId":       "<tenant>",
+#                         "subscriptionId": "<your-azure-subscription-id>"
+#                       }
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'function_app.py'
+      - 'src/**'
+      - 'requirements.txt'
+
+jobs:
+  deploy:
+    name: Deploy Function Code
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Azure Functions Core Tools
+        run: npm install -g azure-functions-core-tools@4 --unsafe-perm true
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Function App
+        run: func azure functionapp publish obs-scheduler-xheofbriqbtrw --python
+
+      - name: Print Function App URL
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "  Deployment complete"
+          echo "=========================================="
+          echo ""
+          echo "Function App URL : https://obs-scheduler-xheofbriqbtrw.azurewebsites.net"
+          echo ""
+          echo "Available endpoints:"
+          echo "  POST https://obs-scheduler-xheofbriqbtrw.azurewebsites.net/api/load-schedule"
+          echo ""
+
+      - name: Log out of Azure
+        if: always()
+        run: az logout

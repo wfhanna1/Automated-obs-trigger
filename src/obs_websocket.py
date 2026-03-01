@@ -8,6 +8,8 @@ obs_tunnel() context manager in remote_controller.py — OBS WebSocket is
 never exposed directly to the internet.
 """
 
+from __future__ import annotations
+
 import logging
 import time
 

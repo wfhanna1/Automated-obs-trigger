@@ -1,0 +1,28 @@
+server_id,date,start_time,stop_time,action,timezone
+# Sample weekly production schedule — Mon-Fri, week of 2099-03-04
+#
+# Column reference:
+#   server_id  : must match a key in config/servers.yaml
+#   date       : YYYY-MM-DD
+#   start_time : HH:MM (24-hour, in the local timezone given by the timezone column)
+#   stop_time  : HH:MM (24-hour, in the local timezone given by the timezone column)
+#   action     : "recording" or "streaming"
+#   timezone   : IANA timezone name (e.g. America/New_York, America/Los_Angeles)
+#
+# This file is a non-expiring template for testing and onboarding.
+# Replace dates with the current week's dates before use in production.
+#
+# Monday — morning recording (East Coast) + afternoon streaming (West Coast)
+win-server-1,2099-03-04,09:00,12:00,recording,America/New_York
+mac-server-1,2099-03-04,14:00,17:00,streaming,America/Los_Angeles
+# Tuesday — full-day streaming split across both servers
+win-server-1,2099-03-05,09:00,12:00,streaming,America/New_York
+mac-server-1,2099-03-05,09:00,12:00,recording,America/Los_Angeles
+# Wednesday — afternoon recording session on East Coast only
+win-server-1,2099-03-06,14:00,17:00,recording,America/New_York
+# Thursday — morning streaming on West Coast + afternoon recording on East Coast
+mac-server-1,2099-03-07,09:00,11:00,streaming,America/Los_Angeles
+win-server-1,2099-03-07,14:00,16:30,recording,America/New_York
+# Friday — wrap-up recording on both servers
+win-server-1,2099-03-08,09:00,11:00,recording,America/New_York
+mac-server-1,2099-03-08,10:00,13:00,recording,America/Los_Angeles
