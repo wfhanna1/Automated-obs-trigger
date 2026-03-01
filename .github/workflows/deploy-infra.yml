@@ -35,7 +35,7 @@ on:
       servers_config_url:
         description: 'GitHub raw URL for config/servers.yaml'
         required: true
-        default: 'https://raw.githubusercontent.com/wfhanna1/Automated-obs-trigger/main/config/servers.yaml'
+        default: 'https://gist.githubusercontent.com/wfhanna1/52b027ce6139004cdaff0aee71dd5f63/raw/servers.yaml'
 
 jobs:
   deploy:
