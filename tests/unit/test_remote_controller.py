@@ -369,7 +369,7 @@ class TestKillObs:
         return mock_client
 
     @patch("remote_controller._make_ssh_client")
-    def test_kills_obs_on_windows_with_stop_process_command(
+    def test_kills_obs_on_windows_with_taskkill_command(
         self, mock_make_client, fake_pem
     ):
         mock_client = self._make_connected_client()
@@ -378,7 +378,8 @@ class TestKillObs:
         kill_obs("host", 22, "user", fake_pem, "windows")
 
         cmd_arg = mock_client.exec_command.call_args[0][0]
-        assert "Stop-Process" in cmd_arg
+        assert "taskkill" in cmd_arg
+        assert "/F" not in cmd_arg
 
     @patch("remote_controller._make_ssh_client")
     def test_kills_obs_on_mac_with_pkill_command(

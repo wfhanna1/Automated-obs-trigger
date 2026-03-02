@@ -160,10 +160,10 @@ def kill_obs(host: str, port: int, user: str, key_pem: str, platform: str) -> No
     client = _make_ssh_client(host, port, user, key_pem)
     try:
         if platform == "windows":
-            command = (
-                'powershell -Command '
-                '"Stop-Process -Name obs64 -Force -ErrorAction SilentlyContinue"'
-            )
+            # taskkill without /F sends WM_CLOSE, letting OBS save state and
+            # exit cleanly. Using /F would hard-kill it, causing the
+            # "didn't shut down properly" dialog on next launch.
+            command = "taskkill /IM obs64.exe"
         else:
             command = "pkill -x OBS || true"
 
