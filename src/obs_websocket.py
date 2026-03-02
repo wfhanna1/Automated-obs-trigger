@@ -14,6 +14,7 @@ import logging
 import time
 
 import obsws_python as obs
+from obsws_python.error import OBSSDKRequestError
 
 logger = logging.getLogger(__name__)
 
@@ -129,10 +130,22 @@ def stop_action(local_port: int, password: str, action: str) -> None:
     client = _connect(local_port, password)
     try:
         if action == "recording":
-            client.stop_record()
+            try:
+                client.stop_record()
+            except OBSSDKRequestError as exc:
+                if exc.code == 501:
+                    logger.warning("OBS recording was already stopped (OutputNotRunning).")
+                else:
+                    raise
             logger.info("OBS recording stopped (localhost:%d).", local_port)
         elif action == "streaming":
-            client.stop_stream()
+            try:
+                client.stop_stream()
+            except OBSSDKRequestError as exc:
+                if exc.code == 501:
+                    logger.warning("OBS streaming was already stopped (OutputNotRunning).")
+                else:
+                    raise
             logger.info("OBS streaming stopped (localhost:%d).", local_port)
         else:
             raise ValueError(f"Unknown action '{action}'. Must be 'recording' or 'streaming'.")

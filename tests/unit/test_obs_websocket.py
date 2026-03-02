@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from unittest.mock import MagicMock, patch, call
 import pytest
+from obsws_python.error import OBSSDKRequestError
 
 from obs_websocket import (
     _connect,
@@ -311,6 +312,34 @@ class TestStopAction:
         stop_action(8888, "mypass", "streaming")
 
         mock_connect.assert_called_once_with(8888, "mypass")
+
+    @patch("obs_websocket._connect")
+    def test_stop_streaming_ignores_output_not_running_error(self, mock_connect):
+        """Code 501 (OutputNotRunning) means stream already stopped — treat as success."""
+        mock_client = MagicMock()
+        mock_client.stop_stream.side_effect = OBSSDKRequestError("StopStream", 501, "OutputNotRunning")
+        mock_connect.return_value = mock_client
+
+        stop_action(12345, "password", "streaming")  # must not raise
+
+    @patch("obs_websocket._connect")
+    def test_stop_recording_ignores_output_not_running_error(self, mock_connect):
+        """Code 501 (OutputNotRunning) means recording already stopped — treat as success."""
+        mock_client = MagicMock()
+        mock_client.stop_record.side_effect = OBSSDKRequestError("StopRecord", 501, "OutputNotRunning")
+        mock_connect.return_value = mock_client
+
+        stop_action(12345, "password", "recording")  # must not raise
+
+    @patch("obs_websocket._connect")
+    def test_stop_streaming_reraises_non_501_errors(self, mock_connect):
+        """Other OBS SDK errors (e.g. code 400) must still propagate."""
+        mock_client = MagicMock()
+        mock_client.stop_stream.side_effect = OBSSDKRequestError("StopStream", 400, "BadRequest")
+        mock_connect.return_value = mock_client
+
+        with pytest.raises(OBSSDKRequestError):
+            stop_action(12345, "password", "streaming")
 
 
 # ---------------------------------------------------------------------------
