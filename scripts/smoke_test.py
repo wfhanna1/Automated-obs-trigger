@@ -54,7 +54,7 @@ def build_payload(server_id: str, action: str, command: str) -> str:
 def get_queue_counts(admin_client: ServiceBusAdministrationClient) -> tuple[int, int]:
     """Return (active_message_count, dead_letter_message_count) for obs-jobs."""
     props = admin_client.get_queue_runtime_properties(QUEUE_NAME)
-    return props.active_message_count, props.dead_letter_message_count
+    return props.active_message_count or 0, props.dead_letter_message_count or 0
 
 
 def send_message(connection_string: str, payload: str) -> None:

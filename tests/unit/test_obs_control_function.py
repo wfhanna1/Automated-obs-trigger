@@ -42,7 +42,7 @@ VALID_BODY = {
 class TestSshKeyBase64Decode:
     """Verify that obs_control_function decodes the base64 SSH key before use."""
 
-    @patch("function_app.kill_obs")
+    @patch("function_app.quit_obs_ws")
     @patch("function_app.stop_action")
     @patch("function_app.start_action")
     @patch("function_app.obs_tunnel")
@@ -59,7 +59,7 @@ class TestSshKeyBase64Decode:
         mock_obs_tunnel,
         mock_start_action,
         mock_stop_action,
-        mock_kill_obs,
+        mock_quit_obs_ws,
         fake_pem,
         fake_server_config,
     ):
@@ -81,7 +81,7 @@ class TestSshKeyBase64Decode:
         actual_key_pem = args[0][3]  # positional: host, port, user, key_pem, ...
         assert actual_key_pem == fake_pem
 
-    @patch("function_app.kill_obs")
+    @patch("function_app.quit_obs_ws")
     @patch("function_app.stop_action")
     @patch("function_app.start_action")
     @patch("function_app.obs_tunnel")
@@ -98,7 +98,7 @@ class TestSshKeyBase64Decode:
         mock_obs_tunnel,
         mock_start_action,
         mock_stop_action,
-        mock_kill_obs,
+        mock_quit_obs_ws,
         fake_pem,
         fake_server_config,
     ):
@@ -118,7 +118,7 @@ class TestSshKeyBase64Decode:
 
         mock_launch_obs.assert_not_called()
 
-    @patch("function_app.kill_obs")
+    @patch("function_app.quit_obs_ws")
     @patch("function_app.stop_action")
     @patch("function_app.start_action")
     @patch("function_app.obs_tunnel")
@@ -135,7 +135,7 @@ class TestSshKeyBase64Decode:
         mock_obs_tunnel,
         mock_start_action,
         mock_stop_action,
-        mock_kill_obs,
+        mock_quit_obs_ws,
         fake_pem,
         fake_server_config,
     ):
@@ -157,7 +157,7 @@ class TestSshKeyBase64Decode:
         actual_key_pem = tunnel_call_args[0][3]  # host, ssh_port, user, key_pem, ws_port
         assert actual_key_pem == fake_pem
 
-    @patch("function_app.kill_obs")
+    @patch("function_app.quit_obs_ws")
     @patch("function_app.stop_action")
     @patch("function_app.start_action")
     @patch("function_app.obs_tunnel")
@@ -174,7 +174,7 @@ class TestSshKeyBase64Decode:
         mock_obs_tunnel,
         mock_start_action,
         mock_stop_action,
-        mock_kill_obs,
+        mock_quit_obs_ws,
         fake_pem,
         fake_server_config,
     ):
@@ -201,3 +201,76 @@ class TestSshKeyBase64Decode:
 
         called_names = [c[0][1] for c in mock_get_kv_secret.call_args_list]
         assert "ssh-key-win-server-1" in called_names
+
+
+# ---------------------------------------------------------------------------
+# Tests: stop command uses quit_obs_ws for clean shutdown
+# ---------------------------------------------------------------------------
+
+class TestStopCommandCleanShutdown:
+
+    @patch("function_app.quit_obs_ws")
+    @patch("function_app.stop_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_stop_command_calls_quit_obs_ws(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_obs_tunnel,
+        mock_stop_action,
+        mock_quit_obs_ws,
+        fake_pem,
+        fake_server_config,
+    ):
+        """stop command must call quit_obs_ws so OBS shuts down cleanly."""
+        from function_app import obs_control_function
+
+        b64_key = base64.b64encode(fake_pem.encode("utf-8")).decode("utf-8")
+        mock_get_env.return_value = "https://fake-vault.vault.azure.net/"
+        mock_load_servers.return_value = fake_server_config
+        mock_get_kv_secret.side_effect = lambda _uri, name: (
+            b64_key if "ssh-key" in name else "obs-password"
+        )
+        mock_obs_tunnel.return_value.__enter__ = MagicMock(return_value=9876)
+        mock_obs_tunnel.return_value.__exit__ = MagicMock(return_value=False)
+
+        obs_control_function(_make_sb_message({**VALID_BODY, "command": "stop"}))
+
+        mock_quit_obs_ws.assert_called_once()
+
+    @patch("function_app.quit_obs_ws")
+    @patch("function_app.stop_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_stop_command_passes_local_port_and_password_to_quit_obs_ws(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_obs_tunnel,
+        mock_stop_action,
+        mock_quit_obs_ws,
+        fake_pem,
+        fake_server_config,
+    ):
+        """quit_obs_ws must receive the tunnelled local port and OBS WS password."""
+        from function_app import obs_control_function
+
+        b64_key = base64.b64encode(fake_pem.encode("utf-8")).decode("utf-8")
+        mock_get_env.return_value = "https://fake-vault.vault.azure.net/"
+        mock_load_servers.return_value = fake_server_config
+        mock_get_kv_secret.side_effect = lambda _uri, name: (
+            b64_key if "ssh-key" in name else "obs-ws-secret"
+        )
+        mock_obs_tunnel.return_value.__enter__ = MagicMock(return_value=9876)
+        mock_obs_tunnel.return_value.__exit__ = MagicMock(return_value=False)
+
+        obs_control_function(_make_sb_message({**VALID_BODY, "command": "stop"}))
+
+        mock_quit_obs_ws.assert_called_once_with(9876, "obs-ws-secret")

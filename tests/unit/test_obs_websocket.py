@@ -16,6 +16,7 @@ import pytest
 
 from obs_websocket import (
     _connect,
+    quit_obs_ws,
     start_action,
     stop_action,
     WS_MAX_RETRIES,
@@ -310,3 +311,48 @@ class TestStopAction:
         stop_action(8888, "mypass", "streaming")
 
         mock_connect.assert_called_once_with(8888, "mypass")
+
+
+# ---------------------------------------------------------------------------
+# quit_obs_ws tests
+# ---------------------------------------------------------------------------
+
+class TestQuitObsWs:
+
+    @patch("obs_websocket._connect")
+    def test_calls_quit_obs_on_client(self, mock_connect):
+        mock_client = MagicMock()
+        mock_connect.return_value = mock_client
+
+        quit_obs_ws(12345, "password")
+
+        mock_client.quit_obs.assert_called_once()
+
+    @patch("obs_websocket._connect")
+    def test_disconnects_after_quit(self, mock_connect):
+        mock_client = MagicMock()
+        mock_connect.return_value = mock_client
+
+        quit_obs_ws(12345, "password")
+
+        mock_client.disconnect.assert_called_once()
+
+    @patch("obs_websocket._connect")
+    def test_disconnects_even_when_quit_obs_raises(self, mock_connect):
+        mock_client = MagicMock()
+        mock_client.quit_obs.side_effect = Exception("connection lost")
+        mock_connect.return_value = mock_client
+
+        with pytest.raises(Exception):
+            quit_obs_ws(12345, "password")
+
+        mock_client.disconnect.assert_called_once()
+
+    @patch("obs_websocket._connect")
+    def test_connects_with_correct_port_and_password(self, mock_connect):
+        mock_client = MagicMock()
+        mock_connect.return_value = mock_client
+
+        quit_obs_ws(7777, "mypass")
+
+        mock_connect.assert_called_once_with(7777, "mypass")
