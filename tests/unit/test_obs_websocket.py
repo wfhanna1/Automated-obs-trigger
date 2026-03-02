@@ -320,13 +320,13 @@ class TestStopAction:
 class TestQuitObsWs:
 
     @patch("obs_websocket._connect")
-    def test_calls_quit_obs_on_client(self, mock_connect):
+    def test_sends_quit_obs_request(self, mock_connect):
         mock_client = MagicMock()
         mock_connect.return_value = mock_client
 
         quit_obs_ws(12345, "password")
 
-        mock_client.quit_obs.assert_called_once()
+        mock_client.send.assert_called_once_with("QuitOBS")
 
     @patch("obs_websocket._connect")
     def test_disconnects_after_quit(self, mock_connect):
@@ -338,9 +338,9 @@ class TestQuitObsWs:
         mock_client.disconnect.assert_called_once()
 
     @patch("obs_websocket._connect")
-    def test_disconnects_even_when_quit_obs_raises(self, mock_connect):
+    def test_disconnects_even_when_send_raises(self, mock_connect):
         mock_client = MagicMock()
-        mock_client.quit_obs.side_effect = Exception("connection lost")
+        mock_client.send.side_effect = Exception("connection lost")
         mock_connect.return_value = mock_client
 
         with pytest.raises(Exception):

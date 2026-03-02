@@ -107,7 +107,7 @@ def quit_obs_ws(local_port: int, password: str) -> None:
     """
     client = _connect(local_port, password)
     try:
-        client.quit_obs()
+        client.send("QuitOBS")
         logger.info("OBS quit command sent (localhost:%d).", local_port)
     finally:
         client.disconnect()
