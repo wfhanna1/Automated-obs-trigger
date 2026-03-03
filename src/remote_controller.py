@@ -91,19 +91,33 @@ def _ssh_exec(client: paramiko.SSHClient, command: str) -> tuple[str, str]:
 
 
 def _build_mac_launch_command(obs_path: str, scene: str | None, launch_action: str | None) -> str:
-    """Build the launchctl command to start OBS inside the user's graphical session."""
-    # launchctl asuser runs the process in the logged-on user's Aqua (WindowServer)
-    # session, which is required for GUI apps on macOS launched over SSH.
+    """Build the open command to start OBS inside the user's graphical session.
+
+    Uses macOS `open` rather than the binary directly — `open` delegates to
+    LaunchServices, which finds the active graphical session even when called
+    from a non-interactive SSH exec context.
+
+    The SSH user must be the Mac user who owns the active graphical session.
+    """
     if launch_action is not None and launch_action not in ("streaming", "recording"):
-        raise ValueError(f"Unrecognised launch_action '{launch_action}'. Expected 'streaming', 'recording', or None.")
-    cmd = f"launchctl asuser \"$(id -u)\" '{obs_path}'"
+        raise ValueError(
+            f"Unrecognised launch_action '{launch_action}'. Expected 'streaming', 'recording', or None."
+        )
+    # open requires the .app bundle path, not the binary inside it.
+    # Derive it from the configured obs_path.
+    # e.g. /Applications/OBS.app/Contents/MacOS/obs → /Applications/OBS.app
+    if ".app/" in obs_path:
+        app_path = obs_path.split(".app/")[0] + ".app"
+    else:
+        app_path = obs_path
+
+    cmd = f"open '{app_path}' --args"
     if scene is not None:
         cmd += f' --scene "{scene}"'
     if launch_action == "streaming":
         cmd += " --startstreaming"
     elif launch_action == "recording":
         cmd += " --startrecording"
-    cmd += " > /dev/null 2>&1 &"
     return cmd
 
 

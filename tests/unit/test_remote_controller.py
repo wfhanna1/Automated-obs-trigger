@@ -277,7 +277,7 @@ class TestLaunchObs:
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")
-    def test_launches_obs_on_mac_with_launchctl_command(
+    def test_launches_obs_on_mac_with_open_command(
         self, mock_make_client, mock_sleep, fake_pem
     ):
         mock_client = self._make_connected_client()
@@ -286,8 +286,23 @@ class TestLaunchObs:
         launch_obs("host", 22, "user", fake_pem, "mac", "/Applications/OBS.app/Contents/MacOS/obs")
 
         cmd_arg = mock_client.exec_command.call_args[0][0]
-        assert "launchctl" in cmd_arg
+        assert cmd_arg.startswith("open ")
         assert "nohup" not in cmd_arg
+        assert "launchctl" not in cmd_arg
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_mac_launch_derives_app_bundle_path_from_binary_path(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "mac", "/Applications/OBS.app/Contents/MacOS/obs")
+
+        cmd_arg = mock_client.exec_command.call_args[0][0]
+        assert "/Applications/OBS.app" in cmd_arg
+        assert "Contents/MacOS/obs" not in cmd_arg
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")
