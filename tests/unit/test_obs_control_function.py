@@ -475,13 +475,15 @@ class TestBuildMacLaunchCommand:
         from remote_controller import _build_mac_launch_command
         self._fn = _build_mac_launch_command
 
-    def test_command_includes_launchctl_asuser(self):
+    def test_command_uses_open(self):
         cmd = self._fn("/obs", None, None)
-        assert "launchctl asuser" in cmd
+        assert cmd.startswith("open ")
+        assert "launchctl" not in cmd
 
-    def test_command_includes_obs_path(self):
+    def test_command_derives_app_bundle_from_binary_path(self):
         cmd = self._fn("/Applications/OBS.app/Contents/MacOS/obs", None, None)
-        assert "/Applications/OBS.app/Contents/MacOS/obs" in cmd
+        assert "/Applications/OBS.app" in cmd
+        assert "Contents/MacOS/obs" not in cmd
 
     def test_no_scene_flag_when_scene_is_none(self):
         cmd = self._fn("/obs", None, None)
@@ -506,9 +508,11 @@ class TestBuildMacLaunchCommand:
         assert "--startrecording" in cmd
         assert "--startstreaming" not in cmd
 
-    def test_command_ends_with_background_redirect(self):
+    def test_command_does_not_background_or_redirect(self):
+        # open returns immediately by design — no need for & or > /dev/null
         cmd = self._fn("/obs", None, None)
-        assert cmd.endswith("> /dev/null 2>&1 &")
+        assert ">" not in cmd
+        assert "&" not in cmd
 
     def test_scene_and_streaming_flags_together(self):
         cmd = self._fn("/obs", "Live Scene", "streaming")
