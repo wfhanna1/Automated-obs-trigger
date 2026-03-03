@@ -19,6 +19,7 @@ from remote_controller import (
     _ssh_exec,
     launch_obs,
     kill_obs,
+    run_close_exe,
     obs_tunnel,
     SSH_MAX_RETRIES,
     OBS_LAUNCH_WAIT_SECONDS,
@@ -496,6 +497,88 @@ class TestKillObs:
 
         cmd_arg = mock_client.exec_command.call_args[0][0]
         assert "obs64" in cmd_arg
+
+# ---------------------------------------------------------------------------
+# run_close_exe tests
+# ---------------------------------------------------------------------------
+
+class TestRunCloseExe:
+
+    def _make_connected_client(self):
+        mock_client = MagicMock()
+        mock_stdout = MagicMock()
+        mock_stderr = MagicMock()
+        mock_stdout.read.return_value = b""
+        mock_stderr.read.return_value = b""
+        mock_client.exec_command.return_value = (MagicMock(), mock_stdout, mock_stderr)
+        return mock_client
+
+    @patch("remote_controller._make_ssh_client")
+    def test_registers_obsclose_task_with_correct_exe_path(
+        self, mock_make_client, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        run_close_exe("host", 22, "user", fake_pem, r"C:\Users\user\Desktop\close.exe")
+
+        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
+        assert "Register-ScheduledTask" in register_cmd
+        assert r"C:\Users\user\Desktop\close.exe" in register_cmd
+
+    @patch("remote_controller._make_ssh_client")
+    def test_uses_interactive_logon_type(self, mock_make_client, fake_pem):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        run_close_exe("host", 22, "user", fake_pem, r"C:\close.exe")
+
+        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
+        assert "Interactive" in register_cmd
+
+    @patch("remote_controller._make_ssh_client")
+    def test_starts_obsclose_task_after_registering(self, mock_make_client, fake_pem):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        run_close_exe("host", 22, "user", fake_pem, r"C:\close.exe")
+
+        assert mock_client.exec_command.call_count == 2
+        run_cmd = mock_client.exec_command.call_args_list[1][0][0]
+        assert "Start-ScheduledTask" in run_cmd
+
+    @patch("remote_controller._make_ssh_client")
+    def test_client_is_closed_after_run(self, mock_make_client, fake_pem):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        run_close_exe("host", 22, "user", fake_pem, r"C:\close.exe")
+
+        mock_client.close.assert_called_once()
+
+    @patch("remote_controller._make_ssh_client")
+    def test_client_closed_even_if_exec_raises(self, mock_make_client, fake_pem):
+        mock_client = MagicMock()
+        mock_client.exec_command.side_effect = Exception("exec failed")
+        mock_make_client.return_value = mock_client
+
+        with pytest.raises(Exception, match="exec failed"):
+            run_close_exe("host", 22, "user", fake_pem, r"C:\close.exe")
+
+        mock_client.close.assert_called_once()
+
+    @patch("remote_controller._make_ssh_client")
+    def test_task_name_is_obsclose(self, mock_make_client, fake_pem):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        run_close_exe("host", 22, "user", fake_pem, r"C:\close.exe")
+
+        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
+        run_cmd = mock_client.exec_command.call_args_list[1][0][0]
+        assert '"OBSClose"' in register_cmd
+        assert '"OBSClose"' in run_cmd
+
 
 # ---------------------------------------------------------------------------
 # obs_tunnel — paramiko.Transport-based implementation

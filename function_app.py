@@ -30,7 +30,7 @@ from azure.servicebus import ServiceBusClient, ServiceBusMessage
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from schedule_loader import load_schedule          # noqa: E402
-from remote_controller import launch_obs, kill_obs, obs_tunnel   # noqa: E402
+from remote_controller import launch_obs, kill_obs, obs_tunnel, run_close_exe   # noqa: E402
 from obs_websocket import start_action, stop_action, quit_obs_ws  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -215,6 +215,7 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
     platform = server["platform"]
     obs_path = server["obs"].get("path", "")
     ws_port = server["obs"]["websocket_port"]
+    close_exe_path = server["obs"].get("close_exe")
 
     # Fetch secrets from Key Vault at runtime
     try:
@@ -250,7 +251,10 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
                     quit_obs_ws(local_port, obs_password)
                 except Exception as exc:
                     logger.warning("QuitOBS via WebSocket failed (falling back to kill): %s", exc)
-            kill_obs(host, ssh_port, ssh_user, ssh_key_pem, platform)
+            if platform == "windows" and close_exe_path:
+                run_close_exe(host, ssh_port, ssh_user, ssh_key_pem, close_exe_path)
+            else:
+                kill_obs(host, ssh_port, ssh_user, ssh_key_pem, platform)
             logger.info("OBS %s stopped successfully on %s.", action, server_id)
 
         else:

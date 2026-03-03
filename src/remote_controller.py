@@ -212,6 +212,39 @@ def kill_obs(host: str, port: int, user: str, key_pem: str, platform: str) -> No
         client.close()
 
 
+def run_close_exe(host: str, port: int, user: str, key_pem: str, exe_path: str) -> None:
+    """
+    SSH into the remote Windows machine and run a custom close executable
+    in the interactive user session via Task Scheduler.
+
+    Args:
+        host:     Remote hostname or IP.
+        port:     SSH port.
+        user:     SSH username.
+        key_pem:  PEM private key string.
+        exe_path: Full path to the close executable on the remote machine.
+    """
+    client = _make_ssh_client(host, port, user, key_pem)
+    try:
+        register_cmd = (
+            f'Register-ScheduledTask -TaskName "OBSClose" '
+            f'-Action (New-ScheduledTaskAction -Execute "{exe_path}") '
+            f'-Principal (New-ScheduledTaskPrincipal '
+            f'-UserId $env:USERNAME -LogonType Interactive) '
+            f'-Force | Out-Null'
+        )
+        run_cmd = 'Start-ScheduledTask -TaskName "OBSClose"'
+        _, err = _ssh_exec(client, register_cmd)
+        if err:
+            logger.warning("OBSClose task registration stderr on %s: %s", host, err)
+        _, err = _ssh_exec(client, run_cmd)
+        if err:
+            logger.warning("OBSClose task start stderr on %s: %s", host, err)
+        logger.info("close.exe dispatched via Task Scheduler on %s.", host)
+    finally:
+        client.close()
+
+
 def _forward(local_sock: socket.socket, channel: paramiko.Channel) -> None:
     """Bidirectionally forward data between a local socket and a paramiko channel."""
     channel.settimeout(0.5)
