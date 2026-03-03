@@ -230,9 +230,16 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
     try:
         if command == "start":
             logger.info("Starting OBS on %s (%s) — action: %s", server_id, host, action)
-            launch_obs(host, ssh_port, ssh_user, ssh_key_pem, platform, obs_path)
+            scene = server["obs"].get("scene")
+            use_cli_flags = scene is not None
+            launch_obs(
+                host, ssh_port, ssh_user, ssh_key_pem, platform, obs_path,
+                scene=scene, launch_action=action if use_cli_flags else None,
+            )
             with obs_tunnel(host, ssh_port, ssh_user, ssh_key_pem, ws_port) as local_port:
-                start_action(local_port, obs_password, action)
+                if not use_cli_flags:
+                    # CLI flags not used — use WebSocket to switch scene and start action.
+                    start_action(local_port, obs_password, action)
             logger.info("OBS %s started successfully on %s.", action, server_id)
 
         elif command == "stop":

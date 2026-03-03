@@ -2,7 +2,8 @@
 tests/unit/test_obs_control_function.py
 
 Unit tests for the obs_control_function in function_app.py, focused on the
-Key Vault secret retrieval and base64 decode of the SSH private key.
+Key Vault secret retrieval, base64 decode of the SSH private key, and the
+scene/start_action branching logic introduced in the start command path.
 """
 
 import base64
@@ -15,6 +16,7 @@ import pytest
 
 # Ensure the project root is on the path so function_app can be imported.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 # ---------------------------------------------------------------------------
@@ -241,3 +243,279 @@ class TestStopCommandCleanShutdown:
         obs_control_function(_make_sb_message({**VALID_BODY, "command": "stop"}))
 
         mock_kill_obs.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Fixtures: server configs with/without a scene configured
+# ---------------------------------------------------------------------------
+
+MAC_BODY = {
+    "command": "start",
+    "server_id": "mac-server-1",
+    "action": "streaming",
+}
+
+
+def _fake_server_config_with_scene(scene: str) -> dict:
+    """Return a server config where mac-server-1 has a scene set."""
+    return {
+        "mac-server-1": {
+            "name": "Test Mac Server",
+            "platform": "mac",
+            "host": "192.0.2.2",
+            "ssh": {"user": "admin", "port": 22},
+            "obs": {
+                "path": "/Applications/OBS.app/Contents/MacOS/obs",
+                "websocket_port": 4455,
+                "scene": scene,
+            },
+        },
+    }
+
+
+def _fake_server_config_without_scene() -> dict:
+    """Return a server config where mac-server-1 has no scene set."""
+    return {
+        "mac-server-1": {
+            "name": "Test Mac Server",
+            "platform": "mac",
+            "host": "192.0.2.2",
+            "ssh": {"user": "admin", "port": 22},
+            "obs": {
+                "path": "/Applications/OBS.app/Contents/MacOS/obs",
+                "websocket_port": 4455,
+            },
+        },
+    }
+
+
+def _setup_standard_mocks(mock_get_env, mock_load_servers, mock_get_kv_secret,
+                          mock_obs_tunnel, servers_config, fake_pem):
+    """Wire up common mocks used across start-path tests."""
+    b64_key = base64.b64encode(fake_pem.encode("utf-8")).decode("utf-8")
+    mock_get_env.return_value = "https://fake-vault.vault.azure.net/"
+    mock_load_servers.return_value = servers_config
+    mock_get_kv_secret.side_effect = lambda _uri, name: (
+        b64_key if "ssh-key" in name else "obs-password"
+    )
+    mock_obs_tunnel.return_value.__enter__ = MagicMock(return_value=9876)
+    mock_obs_tunnel.return_value.__exit__ = MagicMock(return_value=False)
+
+
+# ---------------------------------------------------------------------------
+# Tests: start command scene/start_action branching
+# ---------------------------------------------------------------------------
+
+class TestStartCommandSceneBranching:
+    """
+    Verify the two branches in the 'start' path:
+
+      scene is set   -> launch_obs gets scene + start_action=action,
+                        start_action() WebSocket call is SKIPPED.
+      scene is None  -> launch_obs gets scene=None + start_action=None,
+                        start_action() WebSocket call IS made.
+    """
+
+    @patch("function_app.start_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_start_action_ws_skipped_when_scene_is_set(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        mock_obs_tunnel,
+        mock_start_action,
+        fake_pem,
+    ):
+        """When the server config has a scene, the WebSocket start_action call must not happen."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            _fake_server_config_with_scene("Small Chapel"), fake_pem,
+        )
+
+        obs_control_function(_make_sb_message(MAC_BODY))
+
+        mock_start_action.assert_not_called()
+
+    @patch("function_app.start_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_start_action_ws_called_when_scene_is_none(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        mock_obs_tunnel,
+        mock_start_action,
+        fake_pem,
+    ):
+        """When no scene is configured, the WebSocket start_action call must be made."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            _fake_server_config_without_scene(), fake_pem,
+        )
+
+        obs_control_function(_make_sb_message(MAC_BODY))
+
+        mock_start_action.assert_called_once()
+
+    @patch("function_app.start_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_launch_obs_receives_scene_and_start_action_when_scene_set(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        mock_obs_tunnel,
+        mock_start_action,
+        fake_pem,
+    ):
+        """launch_obs must receive scene='Small Chapel' and launch_action=action when scene is configured."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            _fake_server_config_with_scene("Small Chapel"), fake_pem,
+        )
+
+        obs_control_function(_make_sb_message(MAC_BODY))
+
+        _, kwargs = mock_launch_obs.call_args
+        assert kwargs.get("scene") == "Small Chapel"
+        assert kwargs.get("launch_action") == "streaming"
+
+    @patch("function_app.start_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_launch_obs_receives_none_scene_and_none_start_action_when_no_scene(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        mock_obs_tunnel,
+        mock_start_action,
+        fake_pem,
+    ):
+        """launch_obs must receive scene=None and launch_action=None when no scene is configured."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            _fake_server_config_without_scene(), fake_pem,
+        )
+
+        obs_control_function(_make_sb_message(MAC_BODY))
+
+        _, kwargs = mock_launch_obs.call_args
+        assert kwargs.get("scene") is None
+        assert kwargs.get("launch_action") is None
+
+    @patch("function_app.start_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_start_action_ws_called_with_correct_port_and_password(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        mock_obs_tunnel,
+        mock_start_action,
+        fake_pem,
+    ):
+        """When scene is None, start_action must receive the tunnelled local_port and obs password."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            _fake_server_config_without_scene(), fake_pem,
+        )
+
+        obs_control_function(_make_sb_message(MAC_BODY))
+
+        mock_start_action.assert_called_once_with(9876, "obs-password", "streaming")
+
+
+# ---------------------------------------------------------------------------
+# Tests: _build_mac_launch_command unit tests
+# ---------------------------------------------------------------------------
+
+class TestBuildMacLaunchCommand:
+    """
+    Direct unit tests for the _build_mac_launch_command helper.
+    This function is the core of the Mac CLI-flag feature.
+    """
+
+    def setup_method(self):
+        from remote_controller import _build_mac_launch_command
+        self._fn = _build_mac_launch_command
+
+    def test_command_includes_launchctl_asuser(self):
+        cmd = self._fn("/obs", None, None)
+        assert "launchctl asuser" in cmd
+
+    def test_command_includes_obs_path(self):
+        cmd = self._fn("/Applications/OBS.app/Contents/MacOS/obs", None, None)
+        assert "/Applications/OBS.app/Contents/MacOS/obs" in cmd
+
+    def test_no_scene_flag_when_scene_is_none(self):
+        cmd = self._fn("/obs", None, None)
+        assert "--scene" not in cmd
+
+    def test_scene_flag_appended_when_scene_provided(self):
+        cmd = self._fn("/obs", "Small Chapel", None)
+        assert '--scene "Small Chapel"' in cmd
+
+    def test_no_action_flag_when_start_action_is_none(self):
+        cmd = self._fn("/obs", None, None)
+        assert "--startstreaming" not in cmd
+        assert "--startrecording" not in cmd
+
+    def test_startstreaming_flag_appended_for_streaming_action(self):
+        cmd = self._fn("/obs", "Main", "streaming")
+        assert "--startstreaming" in cmd
+        assert "--startrecording" not in cmd
+
+    def test_startrecording_flag_appended_for_recording_action(self):
+        cmd = self._fn("/obs", "Main", "recording")
+        assert "--startrecording" in cmd
+        assert "--startstreaming" not in cmd
+
+    def test_command_ends_with_background_redirect(self):
+        cmd = self._fn("/obs", None, None)
+        assert cmd.endswith("> /dev/null 2>&1 &")
+
+    def test_scene_and_streaming_flags_together(self):
+        cmd = self._fn("/obs", "Live Scene", "streaming")
+        assert '--scene "Live Scene"' in cmd
+        assert "--startstreaming" in cmd
+
+    def test_unknown_launch_action_raises_value_error(self):
+        """An unrecognised launch_action value must raise ValueError immediately."""
+        with pytest.raises(ValueError, match="Unrecognised launch_action"):
+            self._fn("/obs", "Main", "unknown_action")

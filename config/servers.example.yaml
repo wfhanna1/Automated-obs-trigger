@@ -1,0 +1,40 @@
+# servers.example.yaml
+#
+# Copy this file to servers.yaml (gitignored) and fill in your real values.
+# The actual servers.yaml is fetched at runtime from the URL in SERVERS_CONFIG_URL.
+#
+# Keys:
+#   host              — IP or hostname of the remote machine
+#   platform          — "windows" or "mac"
+#   ssh.port          — SSH port (usually 22)
+#   ssh.user          — SSH username
+#   obs.path          — Full path to the OBS executable on the remote machine
+#   obs.websocket_port — OBS WebSocket v5 port (default 4455)
+#   obs.scene         — (optional) Scene name to switch to on launch.
+#                       When set, OBS is launched with --scene and
+#                       --startstreaming / --startrecording CLI flags, so
+#                       the WebSocket start call is skipped.
+#                       Omit this field to use the WebSocket to start instead.
+
+servers:
+  chapel-mac:
+    host: "192.168.1.10"
+    platform: mac
+    ssh:
+      port: 22
+      user: operator
+    obs:
+      path: "/Applications/OBS.app/Contents/MacOS/obs"
+      websocket_port: 4455
+      scene: "Small Chapel"   # optional: OBS switches to this scene on launch
+
+  studio-windows:
+    host: "192.168.1.20"
+    platform: windows
+    ssh:
+      port: 22
+      user: operator
+    obs:
+      path: 'C:\Program Files\obs-studio\bin\64bit\obs64.exe'
+      websocket_port: 4455
+      # scene is omitted — WebSocket is used to start streaming/recording

@@ -90,8 +90,29 @@ def _ssh_exec(client: paramiko.SSHClient, command: str) -> tuple[str, str]:
     return out, err
 
 
-def launch_obs(host: str, port: int, user: str, key_pem: str,
-               platform: str, obs_path: str) -> None:
+def _build_mac_launch_command(obs_path: str, scene: str | None, launch_action: str | None) -> str:
+    """Build the launchctl command to start OBS inside the user's graphical session."""
+    # launchctl asuser runs the process in the logged-on user's Aqua (WindowServer)
+    # session, which is required for GUI apps on macOS launched over SSH.
+    if launch_action is not None and launch_action not in ("streaming", "recording"):
+        raise ValueError(f"Unrecognised launch_action '{launch_action}'. Expected 'streaming', 'recording', or None.")
+    cmd = f"launchctl asuser \"$(id -u)\" '{obs_path}'"
+    if scene is not None:
+        cmd += f' --scene "{scene}"'
+    if launch_action == "streaming":
+        cmd += " --startstreaming"
+    elif launch_action == "recording":
+        cmd += " --startrecording"
+    cmd += " > /dev/null 2>&1 &"
+    return cmd
+
+
+def launch_obs(
+    host: str, port: int, user: str, key_pem: str,
+    platform: str, obs_path: str,
+    scene: str | None = None,
+    launch_action: str | None = None,
+) -> None:
     """
     SSH into the remote machine and start OBS in the background.
 
@@ -99,12 +120,15 @@ def launch_obs(host: str, port: int, user: str, key_pem: str,
     server initialise before the caller attempts a WebSocket connection.
 
     Args:
-        host:      Remote hostname or IP.
-        port:      SSH port.
-        user:      SSH username.
-        key_pem:   PEM private key string.
-        platform:  "windows" or "mac".
-        obs_path:  Full path to OBS executable on the remote machine.
+        host:          Remote hostname or IP.
+        port:          SSH port.
+        user:          SSH username.
+        key_pem:       PEM private key string.
+        platform:      "windows" or "mac".
+        obs_path:      Full path to OBS executable on the remote machine.
+        scene:         Optional OBS scene name to pass via --scene flag (Mac only).
+        launch_action: Optional action to start on launch via CLI: "streaming" or
+                       "recording" (Mac only). No-op on Windows.
     """
     client = _make_ssh_client(host, port, user, key_pem)
     try:
@@ -134,8 +158,9 @@ def launch_obs(host: str, port: int, user: str, key_pem: str,
             if err:
                 logger.warning("Task start stderr on %s: %s", host, err)
         else:
-            # Mac: run detached via nohup so the SSH session can close cleanly.
-            command = f"nohup '{obs_path}' --minimize-to-tray > /dev/null 2>&1 &"
+            # Mac: launchctl asuser injects OBS into the logged-on user's Aqua session,
+            # giving it access to WindowServer — which nohup over SSH cannot provide.
+            command = _build_mac_launch_command(obs_path, scene, launch_action)
             _ssh_exec(client, command)
 
         logger.info("OBS launch command sent to %s (%s). Waiting %ds for startup…",
