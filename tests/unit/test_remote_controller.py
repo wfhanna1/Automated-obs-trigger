@@ -277,7 +277,7 @@ class TestLaunchObs:
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")
-    def test_launches_obs_on_mac_with_nohup_command(
+    def test_launches_obs_on_mac_with_launchctl_command(
         self, mock_make_client, mock_sleep, fake_pem
     ):
         mock_client = self._make_connected_client()
@@ -286,7 +286,66 @@ class TestLaunchObs:
         launch_obs("host", 22, "user", fake_pem, "mac", "/Applications/OBS.app/Contents/MacOS/obs")
 
         cmd_arg = mock_client.exec_command.call_args[0][0]
-        assert "nohup" in cmd_arg
+        assert "launchctl" in cmd_arg
+        assert "nohup" not in cmd_arg
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_mac_launch_passes_scene_flag_when_scene_provided(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "mac", "/obs", scene="Small Chapel")
+
+        cmd_arg = mock_client.exec_command.call_args[0][0]
+        assert '--scene "Small Chapel"' in cmd_arg
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_mac_launch_passes_startstreaming_flag_when_action_is_streaming(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "mac", "/obs",
+                   scene="Main", launch_action="streaming")
+
+        cmd_arg = mock_client.exec_command.call_args[0][0]
+        assert "--startstreaming" in cmd_arg
+        assert "--startrecording" not in cmd_arg
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_mac_launch_passes_startrecording_flag_when_action_is_recording(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "mac", "/obs",
+                   scene="Main", launch_action="recording")
+
+        cmd_arg = mock_client.exec_command.call_args[0][0]
+        assert "--startrecording" in cmd_arg
+        assert "--startstreaming" not in cmd_arg
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_mac_launch_omits_scene_and_action_flags_when_none(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "mac", "/obs")
+
+        cmd_arg = mock_client.exec_command.call_args[0][0]
+        assert "--scene" not in cmd_arg
+        assert "--startstreaming" not in cmd_arg
+        assert "--startrecording" not in cmd_arg
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")
