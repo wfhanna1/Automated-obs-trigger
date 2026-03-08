@@ -144,3 +144,25 @@ wfX/TBpJDTMHFe1Hk4KQMH1mvRRBOWMBUFAKEFAKEFAKEFAKEFAKEFAKEFAKEF
 @pytest.fixture
 def fake_pem():
     return FAKE_PEM
+
+
+# ---------------------------------------------------------------------------
+# Server config with close_exe set (for stop-path branching tests)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def fake_server_config_with_close_exe():
+    """A Windows server config with close_exe configured."""
+    return {
+        "win-server-1": {
+            "name": "Test Windows Server",
+            "platform": "windows",
+            "host": "192.0.2.1",
+            "ssh": {"user": "admin", "port": 22},
+            "obs": {
+                "path": r"C:\Program Files\obs-studio\bin\64bit\obs64.exe",
+                "websocket_port": 4455,
+                "close_exe": r"C:\Users\admin\Desktop\close.exe",
+            },
+        },
+    }
