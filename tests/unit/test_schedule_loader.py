@@ -308,3 +308,22 @@ class TestLoadScheduleInvalidAction:
         )
         with pytest.raises(ValueError, match="invalid action"):
             load_schedule(csv_text)
+
+
+# ---------------------------------------------------------------------------
+# UTC conversion accuracy
+# ---------------------------------------------------------------------------
+
+class TestLoadScheduleUtcConversion:
+
+    def test_new_york_time_converted_to_correct_utc(self):
+        """America/New_York 09:00 on a non-DST date should become 14:00 UTC."""
+        csv_text = (
+            "server_id,date,start_time,stop_time,action,timezone\n"
+            # January 15 is not DST, so EST = UTC-5
+            f"win-server-1,{FUTURE_DATE},09:00,10:00,recording,America/New_York\n"
+        )
+        entries = load_schedule(csv_text)
+
+        assert entries[0].start_dt.hour == 14  # 09:00 EST = 14:00 UTC
+        assert entries[0].stop_dt.hour == 15   # 10:00 EST = 15:00 UTC

@@ -427,6 +427,17 @@ class TestLaunchObs:
 
         mock_client.close.assert_called_once()
 
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_raises_when_ssh_connection_fails(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        """launch_obs must propagate RuntimeError when SSH connection itself fails."""
+        mock_make_client.side_effect = RuntimeError("Could not SSH into host")
+
+        with pytest.raises(RuntimeError, match="Could not SSH"):
+            launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
+
 
 # ---------------------------------------------------------------------------
 # kill_obs tests

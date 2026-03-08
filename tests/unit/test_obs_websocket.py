@@ -341,6 +341,16 @@ class TestStopAction:
         with pytest.raises(OBSSDKRequestError):
             stop_action(12345, "password", "streaming")
 
+    @patch("obs_websocket._connect")
+    def test_stop_recording_reraises_non_501_errors(self, mock_connect):
+        """Other OBS SDK errors (e.g. code 400) for recording must still propagate."""
+        mock_client = MagicMock()
+        mock_client.stop_record.side_effect = OBSSDKRequestError("StopRecord", 400, "BadRequest")
+        mock_connect.return_value = mock_client
+
+        with pytest.raises(OBSSDKRequestError):
+            stop_action(12345, "password", "recording")
+
 
 # ---------------------------------------------------------------------------
 # quit_obs_ws tests

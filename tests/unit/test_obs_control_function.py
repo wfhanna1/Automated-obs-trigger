@@ -523,3 +523,270 @@ class TestBuildMacLaunchCommand:
         """An unrecognised launch_action value must raise ValueError immediately."""
         with pytest.raises(ValueError, match="Unrecognised launch_action"):
             self._fn("/obs", "Main", "unknown_action")
+
+
+# ---------------------------------------------------------------------------
+# Tests: malformed message handling
+# ---------------------------------------------------------------------------
+
+class TestMalformedMessage:
+    """Verify obs_control_function handles malformed Service Bus messages gracefully."""
+
+    def test_malformed_json_returns_silently(self):
+        """Malformed JSON should log error and return without raising."""
+        from function_app import obs_control_function
+
+        msg = MagicMock()
+        msg.get_body.return_value = b"not valid json"
+
+        # Must not raise — returns silently for dead-letter handling
+        obs_control_function(msg)
+
+    def test_missing_key_returns_silently(self):
+        """JSON missing required keys should log error and return without raising."""
+        from function_app import obs_control_function
+
+        msg = MagicMock()
+        msg.get_body.return_value = json.dumps({"command": "start"}).encode("utf-8")
+
+        obs_control_function(msg)
+
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_config_load_failure_reraises(self, mock_get_env, mock_load_servers):
+        """Config load failure must re-raise for Service Bus retry."""
+        from function_app import obs_control_function
+
+        mock_get_env.return_value = "https://example.com"
+        mock_load_servers.side_effect = Exception("network error")
+
+        with pytest.raises(Exception, match="network error"):
+            obs_control_function(_make_sb_message(VALID_BODY))
+
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_unknown_server_id_returns_silently(self, mock_get_env, mock_load_servers):
+        """Unknown server_id should log error and return without raising."""
+        from function_app import obs_control_function
+
+        mock_get_env.return_value = "https://example.com"
+        mock_load_servers.return_value = {"other-server": {}}
+
+        obs_control_function(_make_sb_message(VALID_BODY))
+
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_key_vault_failure_reraises(self, mock_get_env, mock_load_servers, mock_get_kv_secret, fake_server_config):
+        """Key Vault failure must re-raise for Service Bus retry."""
+        from function_app import obs_control_function
+
+        mock_get_env.return_value = "https://fake-vault.vault.azure.net/"
+        mock_load_servers.return_value = fake_server_config
+        mock_get_kv_secret.side_effect = Exception("Key Vault unreachable")
+
+        with pytest.raises(Exception, match="Key Vault unreachable"):
+            obs_control_function(_make_sb_message(VALID_BODY))
+
+
+# ---------------------------------------------------------------------------
+# Tests: unknown command
+# ---------------------------------------------------------------------------
+
+class TestUnknownCommand:
+
+    @patch("function_app.kill_obs")
+    @patch("function_app.launch_obs")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_unknown_command_does_not_raise(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_obs_tunnel,
+        mock_launch_obs,
+        mock_kill_obs,
+        fake_pem,
+        fake_server_config,
+    ):
+        """Unknown command should log error and return without raising or calling actions."""
+        from function_app import obs_control_function
+
+        b64_key = base64.b64encode(fake_pem.encode("utf-8")).decode("utf-8")
+        mock_get_env.return_value = "https://fake-vault.vault.azure.net/"
+        mock_load_servers.return_value = fake_server_config
+        mock_get_kv_secret.side_effect = lambda _uri, name: (
+            b64_key if "ssh-key" in name else "obs-password"
+        )
+
+        body = {**VALID_BODY, "command": "restart"}
+        obs_control_function(_make_sb_message(body))
+
+        mock_launch_obs.assert_not_called()
+        mock_kill_obs.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests: stop command with close_exe path
+# ---------------------------------------------------------------------------
+
+def _fake_server_config_with_close_exe() -> dict:
+    """Return a server config where win-server-1 has close_exe set."""
+    return {
+        "win-server-1": {
+            "name": "Test Windows Server",
+            "platform": "windows",
+            "host": "192.0.2.1",
+            "ssh": {"user": "admin", "port": 22},
+            "obs": {
+                "path": r"C:\Program Files\obs-studio\bin\64bit\obs64.exe",
+                "websocket_port": 4455,
+                "close_exe": r"C:\Users\admin\Desktop\close.exe",
+            },
+        },
+    }
+
+
+class TestStopCommandCloseExe:
+
+    @patch("function_app.kill_obs")
+    @patch("function_app.run_close_exe")
+    @patch("function_app.quit_obs_ws")
+    @patch("function_app.stop_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_stop_with_close_exe_calls_run_close_exe(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_obs_tunnel,
+        mock_stop_action,
+        mock_quit_obs_ws,
+        mock_run_close_exe,
+        mock_kill_obs,
+        fake_pem,
+    ):
+        """When close_exe is configured on Windows, run_close_exe is called instead of kill_obs."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            _fake_server_config_with_close_exe(), fake_pem,
+        )
+
+        obs_control_function(_make_sb_message({**VALID_BODY, "command": "stop"}))
+
+        mock_run_close_exe.assert_called_once()
+        mock_kill_obs.assert_not_called()
+
+    @patch("function_app.kill_obs")
+    @patch("function_app.run_close_exe")
+    @patch("function_app.quit_obs_ws")
+    @patch("function_app.stop_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_stop_without_close_exe_calls_kill_obs(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_obs_tunnel,
+        mock_stop_action,
+        mock_quit_obs_ws,
+        mock_run_close_exe,
+        mock_kill_obs,
+        fake_pem,
+        fake_server_config,
+    ):
+        """When close_exe is not configured, kill_obs is called."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            fake_server_config, fake_pem,
+        )
+
+        obs_control_function(_make_sb_message({**VALID_BODY, "command": "stop"}))
+
+        mock_kill_obs.assert_called_once()
+        mock_run_close_exe.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests: stop command quit_obs_ws fallback
+# ---------------------------------------------------------------------------
+
+class TestStopCommandQuitFallback:
+
+    @patch("function_app.kill_obs")
+    @patch("function_app.quit_obs_ws")
+    @patch("function_app.stop_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_quit_obs_ws_failure_still_calls_kill_obs(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_obs_tunnel,
+        mock_stop_action,
+        mock_quit_obs_ws,
+        mock_kill_obs,
+        fake_pem,
+        fake_server_config,
+    ):
+        """If quit_obs_ws fails, kill_obs should still be called as fallback."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            fake_server_config, fake_pem,
+        )
+        mock_quit_obs_ws.side_effect = Exception("WebSocket quit failed")
+
+        obs_control_function(_make_sb_message({**VALID_BODY, "command": "stop"}))
+
+        mock_quit_obs_ws.assert_called_once()
+        mock_kill_obs.assert_called_once()
+
+    @patch("function_app.kill_obs")
+    @patch("function_app.quit_obs_ws")
+    @patch("function_app.stop_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_stop_calls_quit_obs_ws_before_kill(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_obs_tunnel,
+        mock_stop_action,
+        mock_quit_obs_ws,
+        mock_kill_obs,
+        fake_pem,
+        fake_server_config,
+    ):
+        """Stop path must call quit_obs_ws (inside the tunnel) before kill_obs."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            fake_server_config, fake_pem,
+        )
+
+        obs_control_function(_make_sb_message({**VALID_BODY, "command": "stop"}))
+
+        mock_quit_obs_ws.assert_called_once()
+        mock_kill_obs.assert_called_once()
