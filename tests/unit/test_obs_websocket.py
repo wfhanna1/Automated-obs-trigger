@@ -190,14 +190,13 @@ class TestStartAction:
         mock_client.disconnect.assert_called_once()
 
     @patch("obs_websocket._connect")
-    def test_client_disconnected_even_when_unknown_action_raises(self, mock_connect):
-        mock_client = MagicMock()
-        mock_connect.return_value = mock_client
-
+    def test_unknown_action_raises_before_connecting(self, mock_connect):
+        """ValueError for an unknown action must be raised before any OBS
+        connection is attempted — it is a caller bug, not an OBS failure."""
         with pytest.raises(ValueError):
             start_action(12345, "password", "unknown")
 
-        mock_client.disconnect.assert_called_once()
+        mock_connect.assert_not_called()
 
     @patch("obs_websocket._connect")
     def test_start_recording_does_not_call_start_stream(self, mock_connect):
@@ -477,6 +476,32 @@ class TestStartActionLogsErrorOnFailure:
         assert error_records, (
             "Expected at least one ERROR-level log when start_record raises inside "
             "start_action, but none were emitted."
+        )
+
+
+class TestStartActionDoesNotLogErrorForCallerBugs:
+
+    @patch("obs_websocket._connect")
+    def test_start_action_does_not_log_error_for_unknown_action(
+        self, mock_connect, caplog
+    ):
+        """A ValueError for an unknown action is a caller bug, not an OBS failure.
+        start_action must NOT emit an ERROR-level log for it."""
+        # Arrange
+        mock_client = MagicMock()
+        mock_connect.return_value = mock_client
+
+        # Act
+        with caplog.at_level(logging.ERROR, logger="obs_websocket"):
+            with pytest.raises(ValueError, match="Unknown action"):
+                start_action(12345, "password", "bogus")
+
+        # Assert
+        error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert not error_records, (
+            "start_action should NOT emit an ERROR log for an unknown action — "
+            "that is a caller bug (ValueError), not an OBS failure. "
+            f"Got: {[r.getMessage() for r in error_records]}"
         )
 
 

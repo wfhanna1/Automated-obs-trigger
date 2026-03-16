@@ -88,16 +88,17 @@ def start_action(local_port: int, password: str, action: str) -> None:
         ValueError: If action is not "recording" or "streaming".
         RuntimeError: If WebSocket connection fails.
     """
+    if action not in ("recording", "streaming"):
+        raise ValueError(f"Unknown action '{action}'. Must be 'recording' or 'streaming'.")
+
     client = _connect(local_port, password)
     try:
         if action == "recording":
             client.start_record()
             logger.info("OBS recording started (localhost:%d).", local_port)
-        elif action == "streaming":
+        else:
             client.start_stream()
             logger.info("OBS streaming started (localhost:%d).", local_port)
-        else:
-            raise ValueError(f"Unknown action '{action}'. Must be 'recording' or 'streaming'.")
     except Exception as exc:
         logger.error("Failed to start %s on localhost:%d: %s", action, local_port, exc)
         raise

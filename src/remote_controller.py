@@ -303,6 +303,7 @@ def obs_tunnel(host: str, ssh_port: int, user: str, key_pem: str, ws_port: int):
         transport.connect(username=user, pkey=pkey)
     except Exception as exc:
         logger.error("SSH tunnel transport connect to %s:%d failed: %s", host, ssh_port, exc)
+        transport.close()
         raise
 
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

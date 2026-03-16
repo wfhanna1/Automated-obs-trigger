@@ -827,3 +827,25 @@ class TestObsTunnelLogsErrorOnFailure:
             "Expected at least one ERROR-level log when obs_tunnel transport.connect "
             "fails, but none were emitted."
         )
+
+    @patch("remote_controller.socket.socket")
+    @patch("remote_controller.paramiko.RSAKey")
+    @patch("remote_controller.paramiko.Transport")
+    def test_obs_tunnel_closes_transport_when_connect_fails(
+        self, mock_transport_class, mock_rsa_key_class, mock_socket_class, fake_pem
+    ):
+        """When transport.connect() raises, the Transport must be closed to avoid
+        a resource leak (open socket left dangling)."""
+        # Arrange
+        mock_transport = MagicMock()
+        mock_transport.connect.side_effect = Exception("authentication failed")
+        mock_transport_class.return_value = mock_transport
+        mock_rsa_key_class.from_private_key.return_value = MagicMock()
+
+        # Act
+        with pytest.raises(Exception):
+            with obs_tunnel("myhost", 22, "user", fake_pem, 4455):
+                pass
+
+        # Assert
+        mock_transport.close.assert_called_once()
