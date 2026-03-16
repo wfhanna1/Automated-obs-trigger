@@ -32,6 +32,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from schedule_loader import load_schedule          # noqa: E402
 from remote_controller import launch_obs, kill_obs, obs_tunnel, run_close_exe   # noqa: E402
 from obs_websocket import start_action, stop_action, quit_obs_ws  # noqa: E402
+from telemetry import configure_telemetry          # noqa: E402
+
+configure_telemetry()
 
 logger = logging.getLogger(__name__)
 

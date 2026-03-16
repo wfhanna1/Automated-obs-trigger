@@ -6,6 +6,7 @@ Unit tests for src/obs_websocket.py
 All external dependencies (obsws_python, time) are mocked.
 """
 
+import logging
 import sys
 import os
 
@@ -395,3 +396,113 @@ class TestQuitObsWs:
         quit_obs_ws(7777, "mypass")
 
         mock_connect.assert_called_once_with(7777, "mypass")
+
+
+# ---------------------------------------------------------------------------
+# Error-level logging tests — these FAIL until the source adds logger.error calls
+# ---------------------------------------------------------------------------
+
+
+class TestConnectLogsErrorOnExhaustedRetries:
+
+    @patch("obs_websocket.time.sleep")
+    @patch("obs_websocket.obs.ReqClient")
+    def test_connect_logs_error_when_all_retries_exhausted(
+        self, mock_req_client, mock_sleep, caplog
+    ):
+        """An ERROR-level log containing the port and retry count must be emitted
+        when _connect exhausts all retries before the RuntimeError is raised."""
+        # Arrange
+        mock_req_client.side_effect = Exception("connection refused")
+
+        # Act
+        with caplog.at_level(logging.ERROR, logger="obs_websocket"):
+            with pytest.raises(RuntimeError):
+                _connect(8765, "password")
+
+        # Assert
+        error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert error_records, (
+            "Expected at least one ERROR-level log when OBS WebSocket retries are "
+            "exhausted, but none were emitted."
+        )
+        combined = " ".join(r.getMessage() for r in error_records)
+        assert "8765" in combined, "ERROR log must include the target port."
+        assert str(WS_MAX_RETRIES) in combined, "ERROR log must include the retry count."
+
+
+class TestStartActionLogsErrorOnFailure:
+
+    @patch("obs_websocket._connect")
+    def test_start_action_logs_error_when_start_stream_raises(
+        self, mock_connect, caplog
+    ):
+        """An ERROR-level log must be emitted when client.start_stream raises
+        inside start_action."""
+        # Arrange
+        mock_client = MagicMock()
+        mock_client.start_stream.side_effect = Exception("OBS error")
+        mock_connect.return_value = mock_client
+
+        # Act
+        with caplog.at_level(logging.ERROR, logger="obs_websocket"):
+            with pytest.raises(Exception):
+                start_action(12345, "password", "streaming")
+
+        # Assert
+        error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert error_records, (
+            "Expected at least one ERROR-level log when start_stream raises inside "
+            "start_action, but none were emitted."
+        )
+
+    @patch("obs_websocket._connect")
+    def test_start_action_logs_error_when_start_record_raises(
+        self, mock_connect, caplog
+    ):
+        """An ERROR-level log must be emitted when client.start_record raises
+        inside start_action."""
+        # Arrange
+        mock_client = MagicMock()
+        mock_client.start_record.side_effect = Exception("OBS error")
+        mock_connect.return_value = mock_client
+
+        # Act
+        with caplog.at_level(logging.ERROR, logger="obs_websocket"):
+            with pytest.raises(Exception):
+                start_action(12345, "password", "recording")
+
+        # Assert
+        error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert error_records, (
+            "Expected at least one ERROR-level log when start_record raises inside "
+            "start_action, but none were emitted."
+        )
+
+
+class TestStopActionLogsErrorOnFailure:
+
+    @patch("obs_websocket._connect")
+    def test_stop_action_logs_error_when_stop_stream_raises(
+        self, mock_connect, caplog
+    ):
+        """An ERROR-level log must be emitted when a non-501 OBSSDKRequestError
+        is raised by client.stop_stream inside stop_action."""
+        # Arrange
+        mock_client = MagicMock()
+        mock_client.stop_stream.side_effect = OBSSDKRequestError(
+            "StopStream", 400, "BadRequest"
+        )
+        mock_connect.return_value = mock_client
+
+        # Act
+        with caplog.at_level(logging.ERROR, logger="obs_websocket"):
+            with pytest.raises(OBSSDKRequestError):
+                stop_action(12345, "password", "streaming")
+
+        # Assert
+        error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert error_records, (
+            "Expected at least one ERROR-level log when a non-501 OBSSDKRequestError "
+            "is raised by stop_stream, but none were emitted."
+        )

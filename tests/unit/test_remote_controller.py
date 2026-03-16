@@ -6,6 +6,7 @@ Unit tests for src/remote_controller.py
 All external dependencies (paramiko, time) are mocked.
 """
 
+import logging
 import sys
 import os
 
@@ -727,3 +728,102 @@ class TestObsTunnelParamiko:
 
         dest = mock_transport.open_channel.call_args[0][1]  # (dest_addr, dest_port)
         assert dest[1] == 7777
+
+
+# ---------------------------------------------------------------------------
+# Error-level logging tests — these FAIL until the source adds logger.error calls
+# ---------------------------------------------------------------------------
+
+
+class TestMakeSshClientLogsErrorOnExhaustedRetries:
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller.paramiko.RSAKey")
+    @patch("remote_controller.paramiko.SSHClient")
+    def test_make_ssh_client_logs_error_when_all_retries_exhausted(
+        self, mock_ssh_class, mock_rsa_key, mock_sleep, fake_pem, caplog
+    ):
+        """An ERROR-level log containing host, port, and retry count must be emitted
+        when _make_ssh_client exhausts all retries before the RuntimeError is raised."""
+        # Arrange
+        mock_client = MagicMock()
+        mock_ssh_class.return_value = mock_client
+        mock_rsa_key.from_private_key.return_value = MagicMock()
+        mock_client.connect.side_effect = Exception("connection refused")
+
+        # Act
+        with caplog.at_level(logging.ERROR, logger="remote_controller"):
+            with pytest.raises(RuntimeError):
+                _make_ssh_client("myhost", 2222, "user", fake_pem)
+
+        # Assert — an ERROR record must mention the host, port, and retry count
+        error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert error_records, (
+            "Expected at least one ERROR-level log when SSH retries are exhausted, "
+            "but none were emitted."
+        )
+        combined = " ".join(r.getMessage() for r in error_records)
+        assert "myhost" in combined, "ERROR log must include the target host."
+        assert "2222" in combined, "ERROR log must include the target port."
+        assert str(SSH_MAX_RETRIES) in combined, "ERROR log must include the retry count."
+
+
+class TestLaunchObsLogsErrorOnFailure:
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._ssh_exec")
+    @patch("remote_controller._make_ssh_client")
+    def test_launch_obs_logs_error_when_ssh_exec_fails(
+        self, mock_make_client, mock_ssh_exec, mock_sleep, fake_pem, caplog
+    ):
+        """An ERROR-level log mentioning host and platform must be emitted when the
+        SSH exec call inside launch_obs raises an exception."""
+        # Arrange
+        mock_client = MagicMock()
+        mock_make_client.return_value = mock_client
+        mock_ssh_exec.side_effect = Exception("exec failed")
+
+        # Act
+        with caplog.at_level(logging.ERROR, logger="remote_controller"):
+            with pytest.raises(Exception):
+                launch_obs("myhost", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
+
+        # Assert
+        error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert error_records, (
+            "Expected at least one ERROR-level log when launch_obs exec fails, "
+            "but none were emitted."
+        )
+        combined = " ".join(r.getMessage() for r in error_records)
+        assert "myhost" in combined, "ERROR log must include the host."
+        assert "windows" in combined, "ERROR log must include the platform."
+
+
+class TestObsTunnelLogsErrorOnFailure:
+
+    @patch("remote_controller.socket.socket")
+    @patch("remote_controller.paramiko.RSAKey")
+    @patch("remote_controller.paramiko.Transport")
+    def test_obs_tunnel_logs_error_when_transport_connect_fails(
+        self, mock_transport_class, mock_rsa_key_class, mock_socket_class, fake_pem, caplog
+    ):
+        """An ERROR-level log must be emitted when paramiko.Transport.connect raises
+        inside obs_tunnel before the context manager propagates the exception."""
+        # Arrange
+        mock_transport = MagicMock()
+        mock_transport.connect.side_effect = Exception("authentication failed")
+        mock_transport_class.return_value = mock_transport
+        mock_rsa_key_class.from_private_key.return_value = MagicMock()
+
+        # Act
+        with caplog.at_level(logging.ERROR, logger="remote_controller"):
+            with pytest.raises(Exception):
+                with obs_tunnel("myhost", 22, "user", fake_pem, 4455):
+                    pass  # should not reach here
+
+        # Assert
+        error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert error_records, (
+            "Expected at least one ERROR-level log when obs_tunnel transport.connect "
+            "fails, but none were emitted."
+        )
