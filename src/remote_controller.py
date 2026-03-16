@@ -74,6 +74,10 @@ def _make_ssh_client(host: str, port: int, user: str, key_pem: str) -> paramiko.
             if attempt < SSH_MAX_RETRIES:
                 time.sleep(2 ** attempt)  # 2s, 4s back-off
 
+    logger.error(
+        "SSH connection to %s:%d failed after %d attempts: %s",
+        host, port, SSH_MAX_RETRIES, last_exc,
+    )
     raise RuntimeError(
         f"Could not SSH to {host}:{port} after {SSH_MAX_RETRIES} attempts: {last_exc}"
     )
@@ -179,6 +183,9 @@ def launch_obs(
 
         logger.info("OBS launch command sent to %s (%s). Waiting %ds for startup…",
                     host, platform, OBS_LAUNCH_WAIT_SECONDS)
+    except Exception as exc:
+        logger.error("Failed to launch OBS on %s (%s): %s", host, platform, exc)
+        raise
     finally:
         client.close()
 
@@ -292,7 +299,12 @@ def obs_tunnel(host: str, ssh_port: int, user: str, key_pem: str, ws_port: int):
     """
     pkey = paramiko.RSAKey.from_private_key(io.StringIO(key_pem))
     transport = paramiko.Transport((host, ssh_port))
-    transport.connect(username=user, pkey=pkey)
+    try:
+        transport.connect(username=user, pkey=pkey)
+    except Exception as exc:
+        logger.error("SSH tunnel transport connect to %s:%d failed: %s", host, ssh_port, exc)
+        transport.close()
+        raise
 
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

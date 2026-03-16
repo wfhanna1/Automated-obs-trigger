@@ -65,6 +65,10 @@ def _connect(local_port: int, password: str) -> obs.ReqClient:
             if attempt < WS_MAX_RETRIES:
                 time.sleep(WS_RETRY_INTERVAL)
 
+    logger.error(
+        "OBS WebSocket connection to localhost:%d failed after %d attempts: %s",
+        local_port, WS_MAX_RETRIES, last_exc,
+    )
     raise RuntimeError(
         f"Could not connect to OBS WebSocket on localhost:{local_port} "
         f"after {WS_MAX_RETRIES} attempts: {last_exc}"
@@ -84,16 +88,20 @@ def start_action(local_port: int, password: str, action: str) -> None:
         ValueError: If action is not "recording" or "streaming".
         RuntimeError: If WebSocket connection fails.
     """
+    if action not in ("recording", "streaming"):
+        raise ValueError(f"Unknown action '{action}'. Must be 'recording' or 'streaming'.")
+
     client = _connect(local_port, password)
     try:
         if action == "recording":
             client.start_record()
             logger.info("OBS recording started (localhost:%d).", local_port)
-        elif action == "streaming":
+        else:
             client.start_stream()
             logger.info("OBS streaming started (localhost:%d).", local_port)
-        else:
-            raise ValueError(f"Unknown action '{action}'. Must be 'recording' or 'streaming'.")
+    except Exception as exc:
+        logger.error("Failed to start %s on localhost:%d: %s", action, local_port, exc)
+        raise
     finally:
         client.disconnect()
 
@@ -136,6 +144,7 @@ def stop_action(local_port: int, password: str, action: str) -> None:
                 if exc.code == 501:
                     logger.warning("OBS recording was already stopped (OutputNotRunning).")
                 else:
+                    logger.error("Failed to stop recording on localhost:%d: %s", local_port, exc)
                     raise
             logger.info("OBS recording stopped (localhost:%d).", local_port)
         elif action == "streaming":
@@ -145,6 +154,7 @@ def stop_action(local_port: int, password: str, action: str) -> None:
                 if exc.code == 501:
                     logger.warning("OBS streaming was already stopped (OutputNotRunning).")
                 else:
+                    logger.error("Failed to stop streaming on localhost:%d: %s", local_port, exc)
                     raise
             logger.info("OBS streaming stopped (localhost:%d).", local_port)
         else:
