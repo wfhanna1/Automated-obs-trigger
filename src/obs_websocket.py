@@ -11,12 +11,35 @@ never exposed directly to the internet.
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 import obsws_python as obs
 from obsws_python.error import OBSSDKRequestError
 
 logger = logging.getLogger(__name__)
+
+# Pattern matching password='...' or password="..." in log messages
+_PASSWORD_PATTERN = re.compile(r"password=(['\"]).*?\1")
+
+
+class PasswordRedactionFilter(logging.Filter):
+    """Redact OBS WebSocket passwords from log messages.
+
+    The obsws_python library logs connection parameters including the
+    password in plaintext. This filter replaces the password value with
+    '***' before the message reaches any handler.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str) and "password=" in record.msg:
+            record.msg = _PASSWORD_PATTERN.sub(r"password=\1***\1", record.msg)
+        return True
+
+
+# Install the filter on the obsws_python logger so all child loggers
+# (e.g. obsws_python.baseclient.ReqClient) inherit it.
+logging.getLogger("obsws_python").addFilter(PasswordRedactionFilter())
 
 # How long to wait between WebSocket connection retries
 WS_RETRY_INTERVAL = 3
