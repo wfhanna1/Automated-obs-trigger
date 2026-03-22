@@ -11,6 +11,8 @@
 //   - Function App             (Python 3.11, system-assigned Managed Identity)
 //   - Role Assignment          (Key Vault Secrets User → Function App identity)
 //   - Role Assignment          (Storage Blob Data Contributor → Function App identity)
+//   - Action Group             (email recipients for failure alerts)
+//   - Scheduled Query Rule     (alerts on OBSControl function failures)
 //
 // Deploy via GitHub Actions (see .github/workflows/deploy-infra.yml)
 // or locally:
@@ -30,6 +32,12 @@ param githubRawCsvUrl string = 'REPLACE_WITH_GITHUB_RAW_CSV_URL'
 
 @description('GitHub raw URL for config/servers.yaml, e.g. https://raw.githubusercontent.com/org/repo/main/config/servers.yaml')
 param serversConfigUrl string = 'REPLACE_WITH_GITHUB_RAW_SERVERS_URL'
+
+@description('Email addresses to receive failure alerts (comma-separated).')
+param alertEmailAddresses array = [
+  'wasim@stmarycoc.org'
+  'nader@stmarycoc.org'
+]
 
 // ---------------------------------------------------------------------------
 // Storage Account  (required by Azure Functions runtime)
@@ -221,6 +229,60 @@ resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
     principalId: funcApp.identity.principalId
     principalType: 'ServicePrincipal'
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Alert: Email action group + scheduled query rule for OBSControl failures
+// ---------------------------------------------------------------------------
+
+resource alertActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
+  name: 'obs-alert-emails'
+  location: 'global'
+  properties: {
+    groupShortName: 'OBSAlerts'
+    enabled: true
+    emailReceivers: [for (email, i) in alertEmailAddresses: {
+      name: 'recipient-${i}'
+      emailAddress: email
+      useCommonAlertSchema: true
+    }]
+  }
+}
+
+resource failureAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+  name: 'obs-control-failure-alert'
+  location: location
+  properties: {
+    displayName: 'OBS Control Function Failure'
+    description: 'Alert when OBSControl function fails to start/stop OBS on a remote server'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    scopes: [
+      logAnalytics.id
+    ]
+    criteria: {
+      allOf: [
+        {
+          query: 'AppTraces | where SeverityLevel >= 3 and Message contains "OBSControl failed"'
+          timeAggregation: 'Count'
+          operator: 'GreaterThan'
+          threshold: 0
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [
+        alertActionGroup.id
+      ]
+    }
+    autoMitigate: true
   }
 }
 
