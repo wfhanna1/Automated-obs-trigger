@@ -2,8 +2,8 @@
 tests/unit/test_obs_control_function.py
 
 Unit tests for the obs_control_function in function_app.py, focused on the
-Key Vault secret retrieval, base64 decode of the SSH private key, and the
-scene/start_action branching logic introduced in the start command path.
+Key Vault secret retrieval, base64 decode of the SSH private key, the
+scene/start_action branching logic, and StreamStarted event publishing.
 """
 
 import base64
@@ -790,3 +790,226 @@ class TestStopCommandQuitFallback:
 
         mock_quit_obs_ws.assert_called_once()
         mock_kill_obs.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Tests: StreamStarted event publishing
+# ---------------------------------------------------------------------------
+
+STREAMING_BODY = {
+    "command": "start",
+    "server_id": "win-server-1",
+    "action": "streaming",
+}
+
+STREAMING_BODY_WITH_TITLE = {
+    "command": "start",
+    "server_id": "win-server-1",
+    "action": "streaming",
+    "title": "Palm Sunday - Divine Liturgy",
+}
+
+
+PLATFORM_ENV_VARS = {
+    "PLATFORM_SERVICE_BUS_CONNECTION": "fake-platform-conn-str",
+    "PLATFORM_SERVICE_BUS_TOPIC": "stream-title",
+}
+
+
+class TestStreamStartedEventPublishing:
+    """Verify StreamStarted event is published after successful streaming start."""
+
+    @patch.dict(os.environ, PLATFORM_ENV_VARS)
+    @patch("function_app.publish_stream_started")
+    @patch("function_app.start_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_publish_called_for_streaming_start(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        mock_obs_tunnel,
+        mock_start_action,
+        mock_publish,
+        fake_pem,
+        fake_server_config,
+    ):
+        """After streaming starts, publish_stream_started must be called."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            fake_server_config, fake_pem,
+        )
+
+        obs_control_function(_make_sb_message(STREAMING_BODY))
+
+        mock_publish.assert_called_once()
+
+    @patch.dict(os.environ, PLATFORM_ENV_VARS)
+    @patch("function_app.publish_stream_started")
+    @patch("function_app.start_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_publish_not_called_for_recording_start(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        mock_obs_tunnel,
+        mock_start_action,
+        mock_publish,
+        fake_pem,
+        fake_server_config,
+    ):
+        """Recording start must NOT publish a StreamStarted event."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            fake_server_config, fake_pem,
+        )
+
+        obs_control_function(_make_sb_message(VALID_BODY))  # action=recording
+
+        mock_publish.assert_not_called()
+
+    @patch.dict(os.environ, PLATFORM_ENV_VARS)
+    @patch("function_app.publish_stream_started")
+    @patch("function_app.kill_obs")
+    @patch("function_app.stop_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_publish_not_called_for_stop_command(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_obs_tunnel,
+        mock_stop_action,
+        mock_kill_obs,
+        mock_publish,
+        fake_pem,
+        fake_server_config,
+    ):
+        """Stop command must NOT publish a StreamStarted event."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            fake_server_config, fake_pem,
+        )
+
+        obs_control_function(_make_sb_message({**VALID_BODY, "command": "stop"}))
+
+        mock_publish.assert_not_called()
+
+    @patch.dict(os.environ, PLATFORM_ENV_VARS)
+    @patch("function_app.publish_stream_started", side_effect=Exception("publish boom"))
+    @patch("function_app.start_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_publish_failure_does_not_crash_obs_control(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        mock_obs_tunnel,
+        mock_start_action,
+        mock_publish,
+        fake_pem,
+        fake_server_config,
+    ):
+        """Event publish failure must not prevent OBS control from succeeding."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            fake_server_config, fake_pem,
+        )
+
+        # Must not raise even though publish_stream_started raises
+        obs_control_function(_make_sb_message(STREAMING_BODY))
+
+    @patch.dict(os.environ, PLATFORM_ENV_VARS)
+    @patch("function_app.publish_stream_started")
+    @patch("function_app.start_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_publish_receives_correct_location(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        mock_obs_tunnel,
+        mock_start_action,
+        mock_publish,
+        fake_pem,
+        fake_server_config,
+    ):
+        """publish_stream_started must receive location from server config."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            fake_server_config, fake_pem,
+        )
+
+        obs_control_function(_make_sb_message(STREAMING_BODY))
+
+        call_args = mock_publish.call_args
+        # location is the 3rd positional arg or keyword
+        assert "st. mary and st. joseph" in str(call_args)
+
+    @patch.dict(os.environ, PLATFORM_ENV_VARS)
+    @patch("function_app.publish_stream_started")
+    @patch("function_app.start_action")
+    @patch("function_app.obs_tunnel")
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_publish_receives_title_from_message(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        mock_obs_tunnel,
+        mock_start_action,
+        mock_publish,
+        fake_pem,
+        fake_server_config,
+    ):
+        """publish_stream_started must receive title from the message payload."""
+        from function_app import obs_control_function
+
+        _setup_standard_mocks(
+            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
+            fake_server_config, fake_pem,
+        )
+
+        obs_control_function(_make_sb_message(STREAMING_BODY_WITH_TITLE))
+
+        call_args = mock_publish.call_args
+        # Check title is passed (either positional or keyword)
+        assert "Palm Sunday - Divine Liturgy" in str(call_args)

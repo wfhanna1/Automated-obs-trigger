@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from schedule_loader import load_schedule          # noqa: E402
 from remote_controller import launch_obs, kill_obs, obs_tunnel, run_close_exe   # noqa: E402
 from obs_websocket import start_action, stop_action, quit_obs_ws  # noqa: E402
+from event_publisher import publish_stream_started  # noqa: E402
 from telemetry import configure_telemetry          # noqa: E402
 
 configure_telemetry()
@@ -140,6 +141,8 @@ def load_schedule_function(req: func.HttpRequest) -> func.HttpResponse:
                         "server_id": entry.server_id,
                         "action": entry.action,
                     }
+                    if entry.title is not None:
+                        payload["title"] = entry.title
                     try:
                         sb_msg = ServiceBusMessage(json.dumps(payload))
                         sb_msg.scheduled_enqueue_time_utc = scheduled_time.replace(tzinfo=None)
@@ -195,6 +198,7 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
         command = data["command"]
         server_id = data["server_id"]
         action = data["action"]
+        title = data.get("title")
     except (json.JSONDecodeError, KeyError) as exc:
         logger.error("Malformed Service Bus message: %s — %s", body, exc)
         return  # Dead-letter on persistent errors is handled by Service Bus
@@ -245,6 +249,21 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
                     # CLI flags not used — use WebSocket to switch scene and start action.
                     start_action(local_port, obs_password, action)
             logger.info("OBS %s started successfully on %s.", action, server_id)
+
+            # Publish StreamStarted event for streaming actions (fire-and-forget)
+            if action == "streaming":
+                try:
+                    platform_sb_conn = os.environ.get("PLATFORM_SERVICE_BUS_CONNECTION", "")
+                    platform_sb_topic = os.environ.get("PLATFORM_SERVICE_BUS_TOPIC", "")
+                    location = server.get("location", "")
+                    if platform_sb_conn and platform_sb_topic:
+                        publish_stream_started(
+                            platform_sb_conn, platform_sb_topic, location, title=title,
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "StreamStarted event publish failed (non-fatal): %s", exc,
+                    )
 
         elif command == "stop":
             logger.info("Stopping OBS on %s (%s) — action: %s", server_id, host, action)
