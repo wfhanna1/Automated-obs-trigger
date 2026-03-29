@@ -39,6 +39,12 @@ param alertEmailAddresses array = [
   'nader@stmarycoc.org'
 ]
 
+@description('Connection string for the shared platform Service Bus (stream-title topic). Empty = event publishing disabled.')
+param platformServiceBusConnection string = ''
+
+@description('Platform Service Bus topic name for StreamStarted events.')
+param platformServiceBusTopic string = 'stream-title'
+
 // ---------------------------------------------------------------------------
 // Storage Account  (required by Azure Functions runtime)
 // ---------------------------------------------------------------------------
@@ -176,6 +182,8 @@ resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'GITHUB_RAW_CSV_URL',               value: githubRawCsvUrl }
         { name: 'SERVERS_CONFIG_URL',               value: serversConfigUrl }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
+        { name: 'PLATFORM_SERVICE_BUS_CONNECTION',     value: platformServiceBusConnection }
+        { name: 'PLATFORM_SERVICE_BUS_TOPIC',          value: platformServiceBusTopic }
       ]
     }
     functionAppConfig: {
