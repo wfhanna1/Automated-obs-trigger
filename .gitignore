@@ -40,3 +40,6 @@ id_ed25519
 # Azure Functions deployment artifacts
 .python_packages/
 .funcignore
+
+# Bicep build output (generated from main.bicep)
+infra/main.json
