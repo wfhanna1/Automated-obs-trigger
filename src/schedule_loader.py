@@ -31,6 +31,7 @@ class ScheduleEntry:
     action: str          # "recording" | "streaming"
     start_dt: datetime   # timezone-aware
     stop_dt: datetime    # timezone-aware
+    title: str | None = None
 
 
 def load_schedule(csv_text: str, known_server_ids: set[str] | None = None) -> list[ScheduleEntry]:
@@ -118,11 +119,18 @@ def load_schedule(csv_text: str, known_server_ids: set[str] | None = None) -> li
             )
             continue
 
+        # Parse optional title column
+        raw_title = row.get("title", "")
+        title = raw_title.strip() if raw_title else None
+        if title == "":
+            title = None
+
         entries.append(ScheduleEntry(
             server_id=server_id,
             action=action,
             start_dt=start_dt,
             stop_dt=stop_dt,
+            title=title,
         ))
 
     logger.info("Loaded %d future session(s) from schedule.", len(entries))

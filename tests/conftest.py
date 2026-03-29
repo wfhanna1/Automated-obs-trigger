@@ -69,6 +69,7 @@ def fake_server_config():
         "win-server-1": {
             "name": "Test Windows Server",
             "platform": "windows",
+            "location": "st. mary and st. joseph",
             "host": "192.0.2.1",
             "ssh": {"user": "admin", "port": 22},
             "obs": {
@@ -79,6 +80,7 @@ def fake_server_config():
         "mac-server-1": {
             "name": "Test Mac Server",
             "platform": "mac",
+            "location": "st. anthony chapel",
             "host": "192.0.2.2",
             "ssh": {"user": "admin", "port": 22},
             "obs": {
@@ -101,6 +103,7 @@ servers:
   win-server-1:
     name: "Windows Server 1"
     platform: windows
+    location: "st. mary and st. joseph"
     host: "192.0.2.1"
     ssh:
       user: admin
@@ -111,6 +114,7 @@ servers:
   mac-server-1:
     name: "Mac Server 1"
     platform: mac
+    location: "st. anthony chapel"
     host: "192.0.2.2"
     ssh:
       user: admin
@@ -124,6 +128,24 @@ servers:
 # ---------------------------------------------------------------------------
 # Known server IDs set (mirrors keys in fake_server_config)
 # ---------------------------------------------------------------------------
+
+@pytest.fixture
+def valid_csv_text_with_title():
+    """Valid CSV with the optional title column populated."""
+    return (
+        "server_id,date,start_time,stop_time,action,timezone,title\n"
+        f"win-server-1,{FUTURE_DATE},09:00,10:00,streaming,America/New_York,Palm Sunday\n"
+    )
+
+
+@pytest.fixture
+def valid_csv_text_with_blank_title():
+    """Valid CSV with the title column present but blank."""
+    return (
+        "server_id,date,start_time,stop_time,action,timezone,title\n"
+        f"win-server-1,{FUTURE_DATE},09:00,10:00,streaming,America/New_York,\n"
+    )
+
 
 @pytest.fixture
 def known_server_ids():
@@ -157,6 +179,7 @@ def fake_server_config_with_close_exe():
         "win-server-1": {
             "name": "Test Windows Server",
             "platform": "windows",
+            "location": "st. mary and st. joseph",
             "host": "192.0.2.1",
             "ssh": {"user": "admin", "port": 22},
             "obs": {

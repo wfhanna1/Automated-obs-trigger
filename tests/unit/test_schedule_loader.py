@@ -327,3 +327,72 @@ class TestLoadScheduleUtcConversion:
 
         assert entries[0].start_dt.hour == 14  # 09:00 EST = 14:00 UTC
         assert entries[0].stop_dt.hour == 15   # 10:00 EST = 15:00 UTC
+
+
+# ---------------------------------------------------------------------------
+# Optional title column tests
+# ---------------------------------------------------------------------------
+
+class TestLoadScheduleTitleColumn:
+
+    def test_csv_without_title_column_returns_none_title(self):
+        """Backward compatibility: CSV without title column sets title to None."""
+        csv_text = (
+            "server_id,date,start_time,stop_time,action,timezone\n"
+            f"win-server-1,{FUTURE_DATE},09:00,10:00,recording,UTC\n"
+        )
+        entries = load_schedule(csv_text)
+
+        assert entries[0].title is None
+
+    def test_csv_with_title_column_parses_title(self):
+        """Title column present with a value is parsed correctly."""
+        csv_text = (
+            "server_id,date,start_time,stop_time,action,timezone,title\n"
+            f"win-server-1,{FUTURE_DATE},09:00,10:00,streaming,UTC,Palm Sunday - Divine Liturgy\n"
+        )
+        entries = load_schedule(csv_text)
+
+        assert entries[0].title == "Palm Sunday - Divine Liturgy"
+
+    def test_csv_with_blank_title_returns_none(self):
+        """Blank title column value is treated as None."""
+        csv_text = (
+            "server_id,date,start_time,stop_time,action,timezone,title\n"
+            f"win-server-1,{FUTURE_DATE},09:00,10:00,streaming,UTC,\n"
+        )
+        entries = load_schedule(csv_text)
+
+        assert entries[0].title is None
+
+    def test_csv_with_whitespace_only_title_returns_none(self):
+        """Whitespace-only title is treated as None."""
+        csv_text = (
+            "server_id,date,start_time,stop_time,action,timezone,title\n"
+            f"win-server-1,{FUTURE_DATE},09:00,10:00,streaming,UTC,   \n"
+        )
+        entries = load_schedule(csv_text)
+
+        assert entries[0].title is None
+
+    def test_csv_with_title_preserves_original_casing(self):
+        """Title should preserve original casing, not be lowered or altered."""
+        csv_text = (
+            "server_id,date,start_time,stop_time,action,timezone,title\n"
+            f"win-server-1,{FUTURE_DATE},09:00,10:00,streaming,UTC,Arabic Bible Study\n"
+        )
+        entries = load_schedule(csv_text)
+
+        assert entries[0].title == "Arabic Bible Study"
+
+    def test_csv_mixed_rows_with_and_without_title(self):
+        """When title column exists, some rows can have title and others can be blank."""
+        csv_text = (
+            "server_id,date,start_time,stop_time,action,timezone,title\n"
+            f"win-server-1,{FUTURE_DATE},09:00,10:00,streaming,UTC,Palm Sunday\n"
+            f"win-server-1,{FUTURE_DATE},11:00,12:00,streaming,UTC,\n"
+        )
+        entries = load_schedule(csv_text)
+
+        assert entries[0].title == "Palm Sunday"
+        assert entries[1].title is None

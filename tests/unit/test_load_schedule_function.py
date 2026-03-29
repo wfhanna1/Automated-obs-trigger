@@ -495,3 +495,80 @@ class TestLoadScheduleFunctionEnqueue:
         load_schedule_function(_make_http_request())
 
         mock_sb_client.get_queue_sender.assert_called_once_with("obs-jobs")
+
+
+# ---------------------------------------------------------------------------
+# Tests: load_schedule_function — title passthrough in queue messages
+# ---------------------------------------------------------------------------
+
+class TestLoadScheduleFunctionTitlePassthrough:
+
+    def _make_entry(self, server_id="win-server-1", action="streaming", title=None):
+        """Create a mock ScheduleEntry with optional title."""
+        from schedule_loader import ScheduleEntry
+        start = datetime(2099, 1, 15, 14, 0, tzinfo=pytz.utc)
+        stop = datetime(2099, 1, 15, 15, 0, tzinfo=pytz.utc)
+        return ScheduleEntry(
+            server_id=server_id, action=action,
+            start_dt=start, stop_dt=stop, title=title,
+        )
+
+    @patch("function_app.ServiceBusMessage")
+    @patch("function_app.ServiceBusClient")
+    @patch("function_app.load_schedule")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._fetch_text")
+    @patch("function_app._get_env")
+    def test_title_included_in_start_message_when_present(
+        self, mock_get_env, mock_fetch, mock_load_servers, mock_load_schedule,
+        mock_sb_class, mock_sb_message_class
+    ):
+        from function_app import load_schedule_function
+
+        mock_get_env.return_value = "https://example.com"
+        mock_fetch.return_value = "csv data"
+        mock_load_servers.return_value = {"win-server-1": {}}
+        mock_load_schedule.return_value = [
+            self._make_entry(title="Palm Sunday - Divine Liturgy"),
+        ]
+
+        mock_sender = MagicMock()
+        mock_sb_client = MagicMock()
+        mock_sb_client.get_queue_sender.return_value.__enter__ = MagicMock(return_value=mock_sender)
+        mock_sb_client.get_queue_sender.return_value.__exit__ = MagicMock(return_value=False)
+        mock_sb_class.from_connection_string.return_value.__enter__ = MagicMock(return_value=mock_sb_client)
+        mock_sb_class.from_connection_string.return_value.__exit__ = MagicMock(return_value=False)
+
+        load_schedule_function(_make_http_request())
+
+        start_payload = json.loads(mock_sb_message_class.call_args_list[0][0][0])
+        assert start_payload["title"] == "Palm Sunday - Divine Liturgy"
+
+    @patch("function_app.ServiceBusMessage")
+    @patch("function_app.ServiceBusClient")
+    @patch("function_app.load_schedule")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._fetch_text")
+    @patch("function_app._get_env")
+    def test_title_not_in_message_when_none(
+        self, mock_get_env, mock_fetch, mock_load_servers, mock_load_schedule,
+        mock_sb_class, mock_sb_message_class
+    ):
+        from function_app import load_schedule_function
+
+        mock_get_env.return_value = "https://example.com"
+        mock_fetch.return_value = "csv data"
+        mock_load_servers.return_value = {"win-server-1": {}}
+        mock_load_schedule.return_value = [self._make_entry(title=None)]
+
+        mock_sender = MagicMock()
+        mock_sb_client = MagicMock()
+        mock_sb_client.get_queue_sender.return_value.__enter__ = MagicMock(return_value=mock_sender)
+        mock_sb_client.get_queue_sender.return_value.__exit__ = MagicMock(return_value=False)
+        mock_sb_class.from_connection_string.return_value.__enter__ = MagicMock(return_value=mock_sb_client)
+        mock_sb_class.from_connection_string.return_value.__exit__ = MagicMock(return_value=False)
+
+        load_schedule_function(_make_http_request())
+
+        start_payload = json.loads(mock_sb_message_class.call_args_list[0][0][0])
+        assert "title" not in start_payload

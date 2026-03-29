@@ -15,11 +15,15 @@
 #                       --startstreaming / --startrecording CLI flags, so
 #                       the WebSocket start call is skipped.
 #                       Omit this field to use the WebSocket to start instead.
+#   location          — (optional) Logical location for platform events.
+#                       Maps the server to a domain location used by the
+#                       stream-title-service (e.g. "st. mary and st. joseph").
 
 servers:
   chapel-mac:
     host: "192.168.1.10"
     platform: mac
+    location: "st. anthony chapel"
     ssh:
       port: 22
       user: operator
@@ -31,6 +35,7 @@ servers:
   studio-windows:
     host: "192.168.1.20"
     platform: windows
+    location: "st. mary and st. joseph"
     ssh:
       port: 22
       user: operator
