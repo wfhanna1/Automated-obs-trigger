@@ -68,7 +68,7 @@ def _send_event(connection_str: str, topic_name: str, event_json: str) -> None:
     """Send an event message to the Service Bus topic with retry and circuit breaker."""
     with ServiceBusClient.from_connection_string(connection_str) as sb_client:
         with sb_client.get_topic_sender(topic_name) as sender:
-            sender.send_messages(ServiceBusMessage(event_json))
+            sender.send_messages(ServiceBusMessage(event_json, subject="StreamStarted"))
 
 
 def publish_stream_started(
