@@ -13,20 +13,25 @@ from typing import Any, Callable
 
 from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
-from azure.servicebus.management import ServiceBusAdministrationClient
+from azure.servicebus import ServiceBusClient
 
 
 def _check_service_bus(
     connection_str: str,
-    name: str,
-    factory: Callable[[str], ServiceBusAdministrationClient] | None = None,
+    topic_or_queue: str,
+    factory: Callable[[str], ServiceBusClient] | None = None,
 ) -> dict[str, Any]:
-    """Ping a Service Bus namespace by listing queues."""
+    """Ping a Service Bus namespace by creating a sender and building a message batch.
+
+    Uses Send-level permissions only (no Manage required).
+    """
     start = time.monotonic()
     try:
-        admin = factory(connection_str) if factory else ServiceBusAdministrationClient.from_connection_string(connection_str)
-        for _ in admin.list_queues():
-            break
+        client = factory(connection_str) if factory else ServiceBusClient.from_connection_string(connection_str)
+        with client:
+            sender = client.get_topic_sender(topic_or_queue) if topic_or_queue else client.get_queue_sender("obs-jobs")
+            with sender:
+                sender.create_message_batch()
         latency = int((time.monotonic() - start) * 1000)
         return {"status": "healthy", "latency_ms": latency}
     except Exception as exc:
@@ -55,17 +60,18 @@ def _check_key_vault(
 def check_health(
     sb_connection: str,
     platform_sb_connection: str,
+    platform_sb_topic: str,
     kv_uri: str,
-    _sb_admin_factory: Callable[[str], ServiceBusAdministrationClient] | None = None,
+    _sb_client_factory: Callable[[str], ServiceBusClient] | None = None,
     _kv_client_factory: Callable[[str], SecretClient] | None = None,
 ) -> dict[str, Any]:
     """Run all health checks and return structured result."""
     checks: dict[str, Any] = {}
 
     checks["own_service_bus"] = _check_service_bus(
-        sb_connection, "own_service_bus", _sb_admin_factory)
+        sb_connection, "", _sb_client_factory)
     checks["platform_service_bus"] = _check_service_bus(
-        platform_sb_connection, "platform_service_bus", _sb_admin_factory)
+        platform_sb_connection, platform_sb_topic, _sb_client_factory)
     checks["key_vault"] = _check_key_vault(kv_uri, _kv_client_factory)
     checks["app_insights"] = {"status": "healthy"}  # Config validated at startup
 
