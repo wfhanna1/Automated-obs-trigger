@@ -303,11 +303,13 @@ def health(req: func.HttpRequest) -> func.HttpResponse:
     """Deep health check against all backing services."""
     sb_conn = os.environ.get("SERVICE_BUS_CONNECTION", "")
     platform_sb_conn = os.environ.get("PLATFORM_SERVICE_BUS_CONNECTION", "")
+    platform_sb_topic = os.environ.get("PLATFORM_SERVICE_BUS_TOPIC", "")
     kv_uri = os.environ.get("KEY_VAULT_URI", "")
 
     result = check_health(
         sb_connection=sb_conn,
         platform_sb_connection=platform_sb_conn,
+        platform_sb_topic=platform_sb_topic,
         kv_uri=kv_uri,
     )
 
