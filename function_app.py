@@ -289,3 +289,32 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
             "OBSControl failed for %s/%s on %s: %s", command, action, server_id, exc
         )
         raise  # Re-raise so Service Bus can retry / dead-letter the message
+
+
+# ---------------------------------------------------------------------------
+# Health endpoint
+# ---------------------------------------------------------------------------
+
+from health import check_health  # noqa: E402
+
+
+@app.route(route="health", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def health(req: func.HttpRequest) -> func.HttpResponse:
+    """Deep health check against all backing services."""
+    sb_conn = os.environ.get("SERVICE_BUS_CONNECTION", "")
+    platform_sb_conn = os.environ.get("PLATFORM_SERVICE_BUS_CONNECTION", "")
+    kv_uri = os.environ.get("KEY_VAULT_URI", "")
+
+    result = check_health(
+        sb_connection=sb_conn,
+        platform_sb_connection=platform_sb_conn,
+        kv_uri=kv_uri,
+    )
+
+    status_code = 200 if result["status"] == "healthy" else 503
+
+    return func.HttpResponse(
+        body=json.dumps(result, indent=2),
+        status_code=status_code,
+        mimetype="application/json",
+    )
