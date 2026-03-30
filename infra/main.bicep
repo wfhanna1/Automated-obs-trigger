@@ -172,6 +172,7 @@ resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
     serverFarmId: appPlan.id
     httpsOnly: true
     siteConfig: {
+      healthCheckPath: '/api/health'
       appSettings: [
         // Flex Consumption uses identity-based host storage — no connection string
         { name: 'AzureWebJobsStorage__accountName', value: storage.name }
