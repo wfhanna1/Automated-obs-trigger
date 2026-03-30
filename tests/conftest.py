@@ -6,6 +6,23 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
+# Required platform env vars (autouse for every test)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _platform_env_vars(monkeypatch):
+    """Ensure required platform env vars are set for all tests.
+
+    startup_validator.validate_required_config() runs at function_app import
+    time. This fixture guarantees the vars exist before any test that triggers
+    that import.
+    """
+    monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "InstrumentationKey=test")
+    monkeypatch.setenv("PLATFORM_SERVICE_BUS_CONNECTION", "Endpoint=sb://test.servicebus.windows.net/")
+    monkeypatch.setenv("PLATFORM_SERVICE_BUS_TOPIC", "stream-title")
+
+
+# ---------------------------------------------------------------------------
 # Future date helpers
 # ---------------------------------------------------------------------------
 

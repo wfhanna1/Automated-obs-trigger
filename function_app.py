@@ -34,8 +34,10 @@ from remote_controller import launch_obs, kill_obs, obs_tunnel, run_close_exe   
 from obs_websocket import start_action, stop_action, quit_obs_ws  # noqa: E402
 from event_publisher import publish_stream_started  # noqa: E402
 from telemetry import configure_telemetry          # noqa: E402
+from startup_validator import validate_required_config  # noqa: E402
 
 configure_telemetry()
+validate_required_config()
 
 logger = logging.getLogger(__name__)
 
