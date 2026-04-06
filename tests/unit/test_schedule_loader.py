@@ -247,13 +247,18 @@ class TestLoadScheduleStopBeforeStart:
         with pytest.raises(ValueError, match="stop_time.*must be after start_time"):
             load_schedule(csv_text)
 
-    def test_stop_time_before_start_time_raises_value_error(self):
+    def test_stop_time_before_start_time_treated_as_overnight(self):
+        """When stop_time < start_time, the session crosses midnight."""
         csv_text = (
             "server_id,date,start_time,stop_time,action,timezone\n"
-            f"win-server-1,{FUTURE_DATE},10:00,09:00,recording,UTC\n"
+            f"win-server-1,{FUTURE_DATE},22:00,06:00,recording,UTC\n"
         )
-        with pytest.raises(ValueError, match="stop_time.*must be after start_time"):
-            load_schedule(csv_text)
+        entries = load_schedule(csv_text)
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry.stop_dt > entry.start_dt
+        # stop should be on the next day
+        assert entry.stop_dt.day != entry.start_dt.day
 
 
 # ---------------------------------------------------------------------------
