@@ -263,8 +263,8 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
                             platform_sb_conn, platform_sb_topic, location, title=title,
                         )
                 except Exception as exc:
-                    logger.warning(
-                        "StreamStarted event publish failed (non-fatal): %s", exc,
+                    logger.error(
+                        "StreamStarted event publish failed: %s", exc,
                     )
 
         elif command == "stop":
