@@ -1,6 +1,6 @@
 server_id,date,start_time,stop_time,action,timezone,title
 mac-server-1,2026-04-29,05:25,07:45,streaming,America/New_York,Divine Liturgy
-mac-server-1,2026-05-01,08:25,10:45,streaming,America/New_York,"Divine Liturgy - Commemoration of the Martyrdom of St. George, the prince of martyrs."
+mac-server-1,2026-05-01,08:25,10:45,streaming,America/New_York,"Divine Liturgy - Commemoration of the Martyrdom of St. George"
 win-server-1,2026-05-02,07:25,09:45,streaming,America/New_York,Divine Liturgy
 win-server-1,2026-05-02,17:55,22:15,streaming,America/New_York,Vespers + Midnight Praises
 win-server-1,2026-05-03,07:55,10:45,streaming,America/New_York,Divine Liturgy
