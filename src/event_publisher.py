@@ -29,6 +29,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from uuid import UUID
 
 import pybreaker
 from azure.servicebus import ServiceBusClient, ServiceBusMessage
@@ -104,7 +105,10 @@ def build_stream_started_event(location: str, title: str | None = None) -> str:
 @_circuit_breaker
 def _send_event(connection_str: str, topic_name: str, event_json: str) -> None:
     """Send an event message to the Service Bus topic with retry and circuit breaker."""
-    application_properties: dict[str, str] = {}
+    # Match azure-servicebus's expected type for ServiceBusMessage.application_properties.
+    # dict is invariant in mypy, so a narrower dict[str, str] won't satisfy it even though
+    # every concrete value here is a string.
+    application_properties: dict[str | bytes, int | float | bytes | bool | str | UUID] = {}
     _, _, traceparent = _current_trace_ids()
     if traceparent is not None:
         application_properties["traceparent"] = traceparent
