@@ -94,6 +94,38 @@ def _ssh_exec(client: paramiko.SSHClient, command: str) -> tuple[str, str]:
     return out, err
 
 
+def _build_sentinel_cleanup_command(platform: str) -> str:
+    """Build the remote shell command that clears OBS's unclean-shutdown sentinel.
+
+    OBS records each launch by writing run_<UUID> into <config>/obs-studio/.sentinel/.
+    On clean shutdown OBS deletes the file. If the file survives — for any reason
+    (crash, kill-race during stop, OS reboot, power loss) — the next launch shows
+    a modal "OBS did not shut down properly" prompt that blocks unattended starts.
+
+    The CLI flag --disable-shutdown-check used to bypass this but was removed in
+    OBS 32.0.0, so we clear the sentinel directory ourselves before each launch.
+    The command also clears the legacy 'safe_mode' file used by older OBS versions.
+
+    Both forms are best-effort: missing paths are silently ignored so the first
+    launch on a fresh machine doesn't error.
+    """
+    if platform == "windows":
+        return (
+            "Remove-Item -Path "
+            r'"$env:APPDATA\obs-studio\.sentinel" '
+            "-Recurse -Force -ErrorAction SilentlyContinue; "
+            "Remove-Item -Path "
+            r'"$env:APPDATA\obs-studio\safe_mode" '
+            "-Force -ErrorAction SilentlyContinue"
+        )
+    if platform == "mac":
+        return (
+            'rm -rf "$HOME/Library/Application Support/obs-studio/.sentinel" '
+            '"$HOME/Library/Application Support/obs-studio/safe_mode"'
+        )
+    raise ValueError(f"Unrecognised platform '{platform}'. Expected 'windows' or 'mac'.")
+
+
 def _build_mac_launch_command(obs_path: str, scene: str | None, launch_action: str | None) -> str:
     """Build the open command to start OBS inside the user's graphical session.
 
@@ -150,6 +182,15 @@ def launch_obs(
     """
     client = _make_ssh_client(host, port, user, key_pem)
     try:
+        # Always clear OBS's unclean-shutdown sentinel BEFORE launching, regardless
+        # of how the previous run ended. This suppresses the "OBS did not shut down
+        # properly" safe-mode prompt that otherwise blocks unattended starts.
+        cleanup_cmd = _build_sentinel_cleanup_command(platform)
+        _, cleanup_err = _ssh_exec(client, cleanup_cmd)
+        if cleanup_err:
+            logger.warning("Sentinel cleanup stderr on %s: %s", host, cleanup_err)
+        logger.info("Cleared OBS sentinel on %s (%s).", host, platform)
+
         if platform == "windows":
             # Start-Process via an SSH exec channel runs in a non-interactive session
             # (Session 0) and cannot access the active desktop, so GUI apps like OBS
