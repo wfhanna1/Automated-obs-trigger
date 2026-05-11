@@ -1,12 +1,4 @@
 server_id,date,start_time,stop_time,action,timezone,title
-<<<<<<< feature/schedule-week-2026-05-11
 mac-server-1,2026-05-13,05:25,07:45,streaming,America/New_York,Divine Liturgy
 win-server-1,2026-05-16,17:55,22:15,streaming,America/New_York,Vespers + General Meeting/Bible Study and Hymns Classes + Midnight Praises
 win-server-1,2026-05-17,07:55,10:45,streaming,America/New_York,Divine Liturgy
-=======
-mac-server-1,2026-05-06,05:25,07:45,streaming,America/New_York,Divine Liturgy
-mac-server-1,2026-05-08,08:25,10:45,streaming,America/New_York,Divine Liturgy - Commemoration of the Martyrdom of St. Mark
-win-server-1,2026-05-09,17:55,22:15,streaming,America/New_York,Vespers + General meeting and Bible Study & Hymns Services + Midnight Praises - Tasbeha
-win-server-1,2026-05-10,07:55,10:45,streaming,America/New_York,Divine Liturgy
-mac-server-1,2026-05-10,08:25,10:45,streaming,America/New_York,Divine Liturgy
->>>>>>> main
