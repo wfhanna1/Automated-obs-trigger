@@ -15,7 +15,7 @@ import csv
 import io
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytz
 
@@ -103,13 +103,17 @@ def load_schedule(csv_text: str, known_server_ids: set[str] | None = None) -> li
                 "Expected date=YYYY-MM-DD, start_time/stop_time=HH:MM."
             )
 
-        start_dt = tz.localize(start_naive).astimezone(pytz.utc)
-        stop_dt = tz.localize(stop_naive).astimezone(pytz.utc)
-
-        if stop_dt <= start_dt:
+        if stop_naive == start_naive:
             raise ValueError(
                 f"Row {row_num}: stop_time '{stop_str}' must be after start_time '{start_str}'."
             )
+
+        # If stop_time is earlier than start_time, the session crosses midnight
+        if stop_naive < start_naive:
+            stop_naive += timedelta(days=1)
+
+        start_dt = tz.localize(start_naive).astimezone(pytz.utc)
+        stop_dt = tz.localize(stop_naive).astimezone(pytz.utc)
 
         # Skip sessions that have already ended
         if stop_dt <= now_utc:

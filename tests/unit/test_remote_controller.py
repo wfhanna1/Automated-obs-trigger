@@ -232,22 +232,24 @@ class TestLaunchObs:
 
         launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
 
-        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
-        run_cmd = mock_client.exec_command.call_args_list[1][0][0]
+        # Call 0 is the sentinel cleanup; register/run come after it.
+        register_cmd = mock_client.exec_command.call_args_list[1][0][0]
+        run_cmd = mock_client.exec_command.call_args_list[2][0][0]
         assert "Register-ScheduledTask" in register_cmd
         assert "Start-ScheduledTask" in run_cmd
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")
-    def test_windows_launch_makes_two_exec_command_calls(
+    def test_windows_launch_makes_three_exec_command_calls(
         self, mock_make_client, mock_sleep, fake_pem
     ):
+        """Three calls: sentinel cleanup, Register-ScheduledTask, Start-ScheduledTask."""
         mock_client = self._make_connected_client()
         mock_make_client.return_value = mock_client
 
         launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
 
-        assert mock_client.exec_command.call_count == 2
+        assert mock_client.exec_command.call_count == 3
 
     @patch("remote_controller.time.sleep")
     @patch("remote_controller._make_ssh_client")
@@ -259,7 +261,7 @@ class TestLaunchObs:
 
         launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
 
-        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
+        register_cmd = mock_client.exec_command.call_args_list[1][0][0]
         assert "Interactive" in register_cmd
 
     @patch("remote_controller.time.sleep")
@@ -273,7 +275,7 @@ class TestLaunchObs:
         launch_obs("host", 22, "user", fake_pem, "windows",
                    r"C:\Program Files\obs-studio\bin\64bit\obs64.exe")
 
-        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
+        register_cmd = mock_client.exec_command.call_args_list[1][0][0]
         assert r"C:\Program Files\obs-studio\bin\64bit" in register_cmd
         assert "WorkingDirectory" in register_cmd
 
@@ -374,7 +376,7 @@ class TestLaunchObs:
 
         launch_obs("host", 22, "user", fake_pem, "windows", r"C:\custom\obs64.exe")
 
-        register_cmd = mock_client.exec_command.call_args_list[0][0][0]
+        register_cmd = mock_client.exec_command.call_args_list[1][0][0]
         assert r"C:\custom\obs64.exe" in register_cmd
 
     @patch("remote_controller.time.sleep")
@@ -438,6 +440,157 @@ class TestLaunchObs:
 
         with pytest.raises(RuntimeError, match="Could not SSH"):
             launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
+
+
+# ---------------------------------------------------------------------------
+# launch_obs OBS sentinel cleanup tests
+#
+# Background: OBS records each launch by writing run_<UUID> into
+# <config>/obs-studio/.sentinel/. On clean shutdown OBS deletes the file.
+# If the file survives (crash, kill-race, reboot, power loss) the next
+# launch shows the modal "OBS did not shut down properly" prompt, which
+# blocks unattended starts. The CLI flag --disable-shutdown-check used
+# to bypass this but was removed in OBS 32.0.0, so launch_obs must clear
+# the sentinel directory on the remote machine before each launch.
+# ---------------------------------------------------------------------------
+
+class TestLaunchObsSentinelCleanup:
+
+    def _make_connected_client(self):
+        mock_client = MagicMock()
+        mock_stdout = MagicMock()
+        mock_stderr = MagicMock()
+        mock_stdout.read.return_value = b""
+        mock_stderr.read.return_value = b""
+        mock_client.exec_command.return_value = (MagicMock(), mock_stdout, mock_stderr)
+        return mock_client
+
+    def _exec_commands(self, mock_client) -> list[str]:
+        return [c[0][0] for c in mock_client.exec_command.call_args_list]
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_windows_clears_sentinel_directory_before_launch(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
+
+        commands = self._exec_commands(mock_client)
+        cleanup_idx = next(
+            i for i, c in enumerate(commands) if r"obs-studio\.sentinel" in c
+        )
+        register_idx = next(
+            i for i, c in enumerate(commands) if "Register-ScheduledTask" in c
+        )
+        assert cleanup_idx < register_idx, (
+            "Sentinel cleanup must run before Register-ScheduledTask. "
+            f"Got cleanup at {cleanup_idx}, register at {register_idx}."
+        )
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_windows_sentinel_cleanup_targets_appdata_obs_studio_sentinel(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
+
+        commands = self._exec_commands(mock_client)
+        cleanup_cmd = next(c for c in commands if r"obs-studio\.sentinel" in c)
+        assert "$env:APPDATA" in cleanup_cmd
+        assert "Remove-Item" in cleanup_cmd
+        assert "-Recurse" in cleanup_cmd
+        assert "-Force" in cleanup_cmd
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_windows_sentinel_cleanup_also_removes_legacy_safe_mode_file(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        """Older OBS versions (pre-32) used a 'safe_mode' file in the same
+        directory rather than the .sentinel subdirectory. Clean both so the
+        fix works regardless of which OBS version is installed."""
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
+
+        commands = self._exec_commands(mock_client)
+        cleanup_cmd = next(c for c in commands if "obs-studio" in c and "Remove-Item" in c)
+        assert "safe_mode" in cleanup_cmd
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_windows_sentinel_cleanup_is_idempotent_on_missing_paths(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        """The cleanup must not error when the sentinel paths don't exist —
+        first-ever launch on a fresh machine has no sentinel to delete."""
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "windows", r"C:\obs64.exe")
+
+        commands = self._exec_commands(mock_client)
+        cleanup_cmd = next(c for c in commands if "obs-studio" in c and "Remove-Item" in c)
+        assert "-ErrorAction SilentlyContinue" in cleanup_cmd
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_mac_clears_sentinel_directory_before_launch(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "mac",
+                   "/Applications/OBS.app/Contents/MacOS/obs")
+
+        commands = self._exec_commands(mock_client)
+        cleanup_idx = next(
+            i for i, c in enumerate(commands) if "obs-studio/.sentinel" in c
+        )
+        open_idx = next(i for i, c in enumerate(commands) if c.startswith("open "))
+        assert cleanup_idx < open_idx, (
+            "Sentinel cleanup must run before the 'open' command. "
+            f"Got cleanup at {cleanup_idx}, open at {open_idx}."
+        )
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_mac_sentinel_cleanup_targets_library_application_support(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "mac",
+                   "/Applications/OBS.app/Contents/MacOS/obs")
+
+        commands = self._exec_commands(mock_client)
+        cleanup_cmd = next(c for c in commands if "obs-studio/.sentinel" in c)
+        assert "$HOME/Library/Application Support/obs-studio/.sentinel" in cleanup_cmd
+        assert "rm -rf" in cleanup_cmd
+
+    @patch("remote_controller.time.sleep")
+    @patch("remote_controller._make_ssh_client")
+    def test_mac_sentinel_cleanup_also_removes_legacy_safe_mode_file(
+        self, mock_make_client, mock_sleep, fake_pem
+    ):
+        mock_client = self._make_connected_client()
+        mock_make_client.return_value = mock_client
+
+        launch_obs("host", 22, "user", fake_pem, "mac",
+                   "/Applications/OBS.app/Contents/MacOS/obs")
+
+        commands = self._exec_commands(mock_client)
+        cleanup_cmd = next(c for c in commands if "obs-studio/.sentinel" in c)
+        assert "$HOME/Library/Application Support/obs-studio/safe_mode" in cleanup_cmd
 
 
 # ---------------------------------------------------------------------------
