@@ -1,0 +1,4 @@
+server_id,date,start_time,stop_time,action,timezone,title
+mac-server-1,2026-05-13,05:25,07:45,streaming,America/New_York,Divine Liturgy
+win-server-1,2026-05-16,17:55,22:15,streaming,America/New_York,Vespers + General Meeting/Bible Study and Hymns Classes + Midnight Praises
+win-server-1,2026-05-17,07:55,10:45,streaming,America/New_York,Divine Liturgy
