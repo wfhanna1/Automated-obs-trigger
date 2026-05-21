@@ -1,7 +1,7 @@
 server_id,date,start_time,stop_time,action,timezone,title
 mac-server-1,2026-05-20,05:25,07:45,streaming,America/New_York,Divine Liturgy
 win-server-1,2026-05-20,18:25,19:30,streaming,America/New_York,Vespers - Feast of Ascension
-mac-server-1,2026-05-21,08:25,10:45,streaming,America/New_York,Divine Liturgy - Feast of Ascension
+win-server-1,2026-05-21,08:25,10:45,streaming,America/New_York,Divine Liturgy - Feast of Ascension
 win-server-1,2026-05-23,17:55,22:15,streaming,America/New_York,Vespers + General meeting and Bible Study & Hymns Services + Midnight Praises - Tasbeha
 win-server-1,2026-05-24,07:55,10:45,streaming,America/New_York,Divine Liturgy
 mac-server-1,2026-05-24,08:25,10:45,streaming,America/New_York,Divine Liturgy
