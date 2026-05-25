@@ -501,6 +501,57 @@ class TestLoadScheduleFunctionEnqueue:
 # Tests: load_schedule_function — title passthrough in queue messages
 # ---------------------------------------------------------------------------
 
+class TestLoadScheduleFunctionPurgeBeforeEnqueue:
+    """LoadSchedule must purge existing scheduled messages before enqueueing
+    new ones, otherwise repeated runs accumulate duplicates."""
+
+    def _make_entry(self, server_id="win-server-1", action="recording"):
+        from schedule_loader import ScheduleEntry
+        start = datetime(2099, 1, 15, 14, 0, tzinfo=pytz.utc)
+        stop = datetime(2099, 1, 15, 15, 0, tzinfo=pytz.utc)
+        return ScheduleEntry(server_id=server_id, action=action, start_dt=start, stop_dt=stop)
+
+    @patch("function_app.purge_scheduled_messages")
+    @patch("function_app.ServiceBusClient")
+    @patch("function_app.load_schedule")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._fetch_text")
+    @patch("function_app._get_env")
+    def test_purge_runs_before_any_send(
+        self, mock_get_env, mock_fetch, mock_load_servers, mock_load_schedule,
+        mock_sb_class, mock_purge,
+    ):
+        from function_app import load_schedule_function
+
+        mock_get_env.return_value = "https://example.com"
+        mock_fetch.return_value = "csv data"
+        mock_load_servers.return_value = {"win-server-1": {}}
+        mock_load_schedule.return_value = [self._make_entry()]
+
+        mock_sender = MagicMock()
+        mock_sb_client = MagicMock()
+        mock_sb_client.get_queue_sender.return_value.__enter__ = MagicMock(return_value=mock_sender)
+        mock_sb_client.get_queue_sender.return_value.__exit__ = MagicMock(return_value=False)
+        mock_sb_class.from_connection_string.return_value.__enter__ = MagicMock(return_value=mock_sb_client)
+        mock_sb_class.from_connection_string.return_value.__exit__ = MagicMock(return_value=False)
+
+        # Attach both observed methods to a single parent so we can assert order.
+        recorder = MagicMock()
+        recorder.attach_mock(mock_purge, "purge")
+        recorder.attach_mock(mock_sender.send_messages, "send")
+
+        load_schedule_function(_make_http_request())
+
+        call_names = [c[0] for c in recorder.mock_calls]
+        assert "purge" in call_names, "purge_scheduled_messages was never invoked"
+        assert "send" in call_names, "send_messages was never invoked"
+        purge_idx = call_names.index("purge")
+        first_send_idx = call_names.index("send")
+        assert purge_idx < first_send_idx, (
+            f"purge must precede every send; call sequence was {call_names}"
+        )
+
+
 class TestLoadScheduleFunctionTitlePassthrough:
 
     def _make_entry(self, server_id="win-server-1", action="streaming", title=None):
