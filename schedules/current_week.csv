@@ -2,7 +2,6 @@ server_id,date,start_time,stop_time,action,timezone,title
 mac-server-1,2026-05-27,05:25,07:45,streaming,America/New_York,Divine Liturgy
 win-server-1,2026-05-29,18:55,20:45,streaming,America/New_York,English Bible Study and Fellowship Meeting
 win-server-1,2026-05-30,07:25,09:45,streaming,America/New_York,Divine Liturgy at St. Mary
-win-server-1,2026-05-30,17:55,20:15,streaming,America/New_York,Vespers + Queen Esther Women's Meeting
-win-server-1,2026-05-30,18:25,22:15,streaming,America/New_York,General meeting and Bible Study & Hymns Services + Midnight Praises - Tasbeha
+win-server-1,2026-05-30,17:55,20:15,streaming,America/New_York,Vespers + Midnight Praises
 win-server-1,2026-05-31,07:25,10:45,streaming,America/New_York,Divine Liturgy
 win-server-1,2026-05-31,15:55,17:45,streaming,America/New_York,Kneeling Prayers/Sagda
