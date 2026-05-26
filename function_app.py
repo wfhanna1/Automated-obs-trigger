@@ -47,6 +47,12 @@ logger = logging.getLogger(__name__)
 # literal is intentionally duplicated there; everywhere else uses this constant.
 OBS_JOBS_QUEUE = "obs-jobs"
 
+# Must match obs-jobs maxDeliveryCount in infra/main.bicep. Used to decide
+# whether an OBSControl exception is a transient retry (Warning) or the
+# final, about-to-dead-letter attempt (Error). The alert rule in main.bicep
+# fires on Error severity, so intermediate retries must not log at Error.
+OBS_JOBS_MAX_DELIVERY_COUNT = 3
+
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 # ---------------------------------------------------------------------------
@@ -292,8 +298,13 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
             logger.error("Unknown command '%s'. Expected 'start' or 'stop'.", command)
 
     except Exception as exc:
-        logger.error(
-            "OBSControl failed for %s/%s on %s: %s", command, action, server_id, exc
+        delivery_count = getattr(msg, "delivery_count", OBS_JOBS_MAX_DELIVERY_COUNT)
+        is_final_attempt = delivery_count >= OBS_JOBS_MAX_DELIVERY_COUNT
+        log = logger.error if is_final_attempt else logger.warning
+        log(
+            "OBSControl failed for %s/%s on %s (attempt %d/%d): %s",
+            command, action, server_id,
+            delivery_count, OBS_JOBS_MAX_DELIVERY_COUNT, exc,
         )
         raise  # Re-raise so Service Bus can retry / dead-letter the message
 
