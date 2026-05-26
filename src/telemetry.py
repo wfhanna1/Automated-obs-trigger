@@ -13,11 +13,10 @@ logger = logging.getLogger(__name__)
 
 ENV_VAR = "APPLICATIONINSIGHTS_CONNECTION_STRING"
 
-configure_azure_monitor: Any = None
 try:
     from azure.monitor.opentelemetry import configure_azure_monitor
 except ImportError:
-    pass
+    configure_azure_monitor: Any = None  # type: ignore[no-redef]
 
 
 def configure_telemetry() -> None:
