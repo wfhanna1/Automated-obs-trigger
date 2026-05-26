@@ -90,20 +90,18 @@ def fetch_app_insights_exceptions(
     return result.stdout.strip()
 
 
-def main() -> None:
-    args = parse_args()
+def _run_phase(args: argparse.Namespace, command: str,
+               admin_client: ServiceBusAdministrationClient) -> int:
+    """Send one message with the given command and poll for its outcome.
 
-    admin_client = ServiceBusAdministrationClient.from_connection_string(
-        args.sb_connection_string
-    )
-
+    Returns exit code: 0 success, 1 dead-lettered, 2 timeout.
+    """
     print(f"[smoke_test] Recording baseline queue counts for '{QUEUE_NAME}'...")
     baseline_active, baseline_dlq = get_queue_counts(admin_client)
     print(f"[smoke_test]   active={baseline_active}, dlq={baseline_dlq}")
 
-    payload = build_payload(args.server_id, args.action, args.command)
-    sent_at = datetime.now(timezone.utc)
-    sent_at_iso = sent_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    payload = build_payload(args.server_id, args.action, command)
+    sent_at_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     print(f"[smoke_test] Sending message at {sent_at_iso}: {payload}")
     send_message(args.sb_connection_string, payload)
@@ -126,16 +124,37 @@ def main() -> None:
                 args.app_insights_name, args.resource_group, sent_at_iso
             )
             print(output)
-            sys.exit(1)
+            return 1
 
         if active <= baseline_active:
             print("[smoke_test] PASS: Message consumed successfully.")
-            sys.exit(0)
+            return 0
 
     print(
         f"[smoke_test] TIMEOUT: Message not processed within {args.max_wait_seconds}s."
     )
-    sys.exit(2)
+    return 2
+
+
+def run(args: argparse.Namespace) -> int:
+    """Run the smoke test. If command is 'start', always enqueue a cleanup stop."""
+    admin_client = ServiceBusAdministrationClient.from_connection_string(
+        args.sb_connection_string
+    )
+
+    primary_rc = _run_phase(args, args.command, admin_client)
+
+    if args.command == "start":
+        print("[smoke_test] Cleanup: enqueuing stop to release the recording...")
+        cleanup_rc = _run_phase(args, "stop", admin_client)
+        if primary_rc == 0 and cleanup_rc != 0:
+            return cleanup_rc
+
+    return primary_rc
+
+
+def main() -> None:
+    sys.exit(run(parse_args()))
 
 
 if __name__ == "__main__":
