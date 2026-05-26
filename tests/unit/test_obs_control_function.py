@@ -8,6 +8,7 @@ scene/start_action branching logic, and StreamStarted event publishing.
 
 import base64
 import json
+import logging
 import sys
 import os
 from unittest.mock import MagicMock, patch
@@ -1013,3 +1014,100 @@ class TestStreamStartedEventPublishing:
         call_args = mock_publish.call_args
         # Check title is passed (either positional or keyword)
         assert "Palm Sunday - Divine Liturgy" in str(call_args)
+
+
+# ---------------------------------------------------------------------------
+# Failure log severity by Service Bus delivery attempt
+# ---------------------------------------------------------------------------
+
+class TestFailureLogSeverityByAttempt:
+    """
+    The Azure Monitor alert rule (infra/main.bicep) fires when an AppTrace
+    contains 'OBSControl failed' at SeverityLevel >= 3 (Error). Service Bus
+    retries up to maxDeliveryCount=3 times. A transient error on retry-1 that
+    succeeds on retry-2 must NOT trigger the alert. Only the final failed
+    delivery (when the message is about to be dead-lettered) should log Error.
+    Intermediate attempts log Warning so operators see the noise without
+    receiving a false-failure email.
+    """
+
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_intermediate_attempt_logs_warning_not_error(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        fake_pem,
+        fake_server_config,
+        caplog,
+    ):
+        from function_app import obs_control_function
+
+        b64_key = base64.b64encode(fake_pem.encode("utf-8")).decode("utf-8")
+        mock_get_env.return_value = "https://fake-vault.vault.azure.net/"
+        mock_load_servers.return_value = fake_server_config
+        mock_get_kv_secret.side_effect = lambda _uri, name: (
+            b64_key if "ssh-key" in name else "obs-password"
+        )
+        mock_launch_obs.side_effect = RuntimeError("transient ssh blip")
+
+        msg = _make_sb_message(VALID_BODY)
+        msg.delivery_count = 1  # first attempt; two more retries remain
+
+        caplog.set_level(logging.DEBUG, logger="function_app")
+        with pytest.raises(RuntimeError):
+            obs_control_function(msg)
+
+        failure_records = [
+            r for r in caplog.records if "OBSControl failed" in r.getMessage()
+        ]
+        assert failure_records, "expected an OBSControl failed log line"
+        assert all(r.levelno == logging.WARNING for r in failure_records), (
+            f"intermediate-attempt failures must log WARNING, got "
+            f"{[r.levelname for r in failure_records]}"
+        )
+
+    @patch("function_app.launch_obs")
+    @patch("function_app._get_kv_secret")
+    @patch("function_app._load_servers_config")
+    @patch("function_app._get_env")
+    def test_final_attempt_logs_error(
+        self,
+        mock_get_env,
+        mock_load_servers,
+        mock_get_kv_secret,
+        mock_launch_obs,
+        fake_pem,
+        fake_server_config,
+        caplog,
+    ):
+        from function_app import obs_control_function
+
+        b64_key = base64.b64encode(fake_pem.encode("utf-8")).decode("utf-8")
+        mock_get_env.return_value = "https://fake-vault.vault.azure.net/"
+        mock_load_servers.return_value = fake_server_config
+        mock_get_kv_secret.side_effect = lambda _uri, name: (
+            b64_key if "ssh-key" in name else "obs-password"
+        )
+        mock_launch_obs.side_effect = RuntimeError("terminal failure")
+
+        msg = _make_sb_message(VALID_BODY)
+        msg.delivery_count = 3  # last attempt; about to dead-letter
+
+        caplog.set_level(logging.DEBUG, logger="function_app")
+        with pytest.raises(RuntimeError):
+            obs_control_function(msg)
+
+        failure_records = [
+            r for r in caplog.records if "OBSControl failed" in r.getMessage()
+        ]
+        assert failure_records, "expected an OBSControl failed log line"
+        assert any(r.levelno == logging.ERROR for r in failure_records), (
+            f"final-attempt failures must log ERROR, got "
+            f"{[r.levelname for r in failure_records]}"
+        )
+
