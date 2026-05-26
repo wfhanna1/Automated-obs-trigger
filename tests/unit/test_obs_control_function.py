@@ -655,7 +655,6 @@ class TestStopCommandCloseExe:
 
     @patch("function_app.kill_obs")
     @patch("function_app.run_close_exe")
-    @patch("function_app.quit_obs_ws")
     @patch("function_app.stop_action")
     @patch("function_app.obs_tunnel")
     @patch("function_app._get_kv_secret")
@@ -668,7 +667,6 @@ class TestStopCommandCloseExe:
         mock_get_kv_secret,
         mock_obs_tunnel,
         mock_stop_action,
-        mock_quit_obs_ws,
         mock_run_close_exe,
         mock_kill_obs,
         fake_pem,
@@ -688,7 +686,6 @@ class TestStopCommandCloseExe:
 
     @patch("function_app.kill_obs")
     @patch("function_app.run_close_exe")
-    @patch("function_app.quit_obs_ws")
     @patch("function_app.stop_action")
     @patch("function_app.obs_tunnel")
     @patch("function_app._get_kv_secret")
@@ -701,7 +698,6 @@ class TestStopCommandCloseExe:
         mock_get_kv_secret,
         mock_obs_tunnel,
         mock_stop_action,
-        mock_quit_obs_ws,
         mock_run_close_exe,
         mock_kill_obs,
         fake_pem,
@@ -722,64 +718,36 @@ class TestStopCommandCloseExe:
 
 
 # ---------------------------------------------------------------------------
-# Tests: stop command quit_obs_ws fallback
+# Tests: stop command no longer calls QuitOBS over WebSocket
 # ---------------------------------------------------------------------------
 
-class TestStopCommandQuitFallback:
+class TestStopCommandSkipsQuitObsWs:
 
     @patch("function_app.kill_obs")
-    @patch("function_app.quit_obs_ws")
     @patch("function_app.stop_action")
     @patch("function_app.obs_tunnel")
     @patch("function_app._get_kv_secret")
     @patch("function_app._load_servers_config")
     @patch("function_app._get_env")
-    def test_quit_obs_ws_failure_still_calls_kill_obs(
+    def test_stop_path_does_not_call_quit_obs_ws(
         self,
         mock_get_env,
         mock_load_servers,
         mock_get_kv_secret,
         mock_obs_tunnel,
         mock_stop_action,
-        mock_quit_obs_ws,
         mock_kill_obs,
         fake_pem,
         fake_server_config,
     ):
-        """If quit_obs_ws fails, kill_obs should still be called as fallback."""
-        from function_app import obs_control_function
+        """Stop path must not call QuitOBS over WebSocket.
 
-        _setup_standard_mocks(
-            mock_get_env, mock_load_servers, mock_get_kv_secret, mock_obs_tunnel,
-            fake_server_config, fake_pem,
-        )
-        mock_quit_obs_ws.side_effect = Exception("WebSocket quit failed")
-
-        obs_control_function(_make_sb_message({**VALID_BODY, "command": "stop"}))
-
-        mock_quit_obs_ws.assert_called_once()
-        mock_kill_obs.assert_called_once()
-
-    @patch("function_app.kill_obs")
-    @patch("function_app.quit_obs_ws")
-    @patch("function_app.stop_action")
-    @patch("function_app.obs_tunnel")
-    @patch("function_app._get_kv_secret")
-    @patch("function_app._load_servers_config")
-    @patch("function_app._get_env")
-    def test_stop_calls_quit_obs_ws_before_kill(
-        self,
-        mock_get_env,
-        mock_load_servers,
-        mock_get_kv_secret,
-        mock_obs_tunnel,
-        mock_stop_action,
-        mock_quit_obs_ws,
-        mock_kill_obs,
-        fake_pem,
-        fake_server_config,
-    ):
-        """Stop path must call quit_obs_ws (inside the tunnel) before kill_obs."""
+        The obsws_python SDK responds to QuitOBS with code 204 and logs the
+        failure at Error level before our except block can catch it, firing
+        a Sev2 alert every time OBS stops cleanly. kill_obs / run_close_exe
+        are the real shutdown path; the WebSocket quit attempt adds nothing.
+        """
+        import function_app
         from function_app import obs_control_function
 
         _setup_standard_mocks(
@@ -789,7 +757,9 @@ class TestStopCommandQuitFallback:
 
         obs_control_function(_make_sb_message({**VALID_BODY, "command": "stop"}))
 
-        mock_quit_obs_ws.assert_called_once()
+        assert not hasattr(function_app, "quit_obs_ws"), (
+            "function_app must no longer import quit_obs_ws"
+        )
         mock_kill_obs.assert_called_once()
 
 
