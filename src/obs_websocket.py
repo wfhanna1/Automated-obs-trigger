@@ -129,22 +129,6 @@ def start_action(local_port: int, password: str, action: str) -> None:
         client.disconnect()
 
 
-def quit_obs_ws(local_port: int, password: str) -> None:
-    """
-    Connect to OBS WebSocket and send QuitOBS for a clean shutdown.
-
-    Args:
-        local_port: Tunnelled local port for OBS WebSocket.
-        password:   OBS WebSocket password.
-    """
-    client = _connect(local_port, password)
-    try:
-        client.send("QuitOBS")
-        logger.info("OBS quit command sent (localhost:%d).", local_port)
-    finally:
-        client.disconnect()
-
-
 def stop_action(local_port: int, password: str, action: str) -> None:
     """
     Connect to OBS WebSocket and stop recording or streaming.

@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from schedule_loader import load_schedule          # noqa: E402
 from remote_controller import launch_obs, kill_obs, obs_tunnel, run_close_exe   # noqa: E402
-from obs_websocket import start_action, stop_action, quit_obs_ws  # noqa: E402
+from obs_websocket import start_action, stop_action  # noqa: E402
 from event_publisher import publish_stream_started  # noqa: E402
 from queue_manager import purge_scheduled_messages  # noqa: E402
 from telemetry import configure_telemetry          # noqa: E402
@@ -284,10 +284,6 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
             logger.info("Stopping OBS on %s (%s) — action: %s", server_id, host, action)
             with obs_tunnel(host, ssh_port, ssh_user, ssh_key_pem, ws_port) as local_port:
                 stop_action(local_port, obs_password, action)
-                try:
-                    quit_obs_ws(local_port, obs_password)
-                except Exception as exc:
-                    logger.warning("QuitOBS via WebSocket failed (falling back to kill): %s", exc)
             if platform == "windows" and close_exe_path:
                 run_close_exe(host, ssh_port, ssh_user, ssh_key_pem, close_exe_path)
             else:

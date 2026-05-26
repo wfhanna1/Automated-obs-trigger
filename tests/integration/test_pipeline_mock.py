@@ -138,7 +138,6 @@ class TestObsControlStopPipeline:
     """Exercise obs_control_function stop path with real config parsing."""
 
     @patch("function_app.kill_obs")
-    @patch("function_app.quit_obs_ws")
     @patch("function_app.stop_action")
     @patch("function_app.obs_tunnel")
     @patch("function_app._get_kv_secret")
@@ -146,7 +145,7 @@ class TestObsControlStopPipeline:
     @patch("function_app._get_env")
     def test_stop_with_real_yaml_config(
         self, mock_get_env, mock_fetch, mock_get_kv_secret,
-        mock_obs_tunnel, mock_stop_action, mock_quit_obs_ws, mock_kill_obs
+        mock_obs_tunnel, mock_stop_action, mock_kill_obs
     ):
         """Stop path: real YAML parsing, mocked SSH/WS/KV."""
         from function_app import obs_control_function
@@ -170,7 +169,6 @@ class TestObsControlStopPipeline:
         obs_control_function(msg)
 
         mock_stop_action.assert_called_once()
-        mock_quit_obs_ws.assert_called_once()
         mock_kill_obs.assert_called_once()
         # Verify platform from config
         assert mock_kill_obs.call_args[0][4] == "windows"
