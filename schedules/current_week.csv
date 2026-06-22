@@ -1,5 +1,7 @@
 server_id,date,start_time,stop_time,action,timezone,title
-mac-server-1,2026-06-17,05:25,07:45,streaming,America/New_York,Divine Liturgy
-mac-server-1,2026-06-19,08:25,13:15,streaming,America/New_York,Divine Liturgy + Young Hearts Fellowship Spiritual Day
-win-server-1,2026-06-20,17:55,22:15,streaming,America/New_York,Vespers & Midnight Praises (Tasbeha)
-win-server-1,2026-06-21,07:55,10:45,streaming,America/New_York,Divine Liturgy
+mac-server-1,2026-06-24,05:25,07:45,streaming,America/New_York,Divine Liturgy
+win-server-1,2026-06-27,07:25,09:45,streaming,America/New_York,Divine Liturgy at St. Mary
+win-server-1,2026-06-27,15:55,22:15,streaming,America/New_York,Queen Esther Women's Meeting + Vespers + General meeting and Bible Study & Hymns Services
+win-server-1,2026-06-27,19:55,22:15,streaming,America/New_York,Midnight Praises - Tasbeha
+win-server-1,2026-06-28,07:55,10:45,streaming,America/New_York,Divine Liturgy
+mac-server-1,2026-06-28,08:25,10:45,streaming,America/New_York,Divine Liturgy
