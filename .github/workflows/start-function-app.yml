@@ -1,0 +1,32 @@
+name: Start Function App
+
+on:
+  workflow_dispatch:
+
+jobs:
+  start:
+    name: Start obs-scheduler Function App
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Start Function App
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az functionapp start \
+              --name obs-scheduler \
+              --resource-group obs-scheduler-rg
+            echo "Function App state:"
+            az functionapp show \
+              --name obs-scheduler \
+              --resource-group obs-scheduler-rg \
+              --query "state" -o tsv
+
+      - name: Log out
+        if: always()
+        run: az logout
