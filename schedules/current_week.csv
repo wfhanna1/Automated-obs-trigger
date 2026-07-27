@@ -1,6 +1,5 @@
 server_id,date,start_time,stop_time,action,timezone,title
-mac-server-1,2026-07-22,05:25,07:45,streaming,America/New_York,Divine Liturgy
-mac-server-1,2026-07-24,08:25,10:45,streaming,America/New_York,Divine Liturgy- Elementary and Middle School Deacons Spiritual Day
-win-server-1,2026-07-25,17:55,22:15,streaming,America/New_York,Vespers & Midnight Praises (Tasbeha)
-win-server-1,2026-07-26,07:55,10:45,streaming,America/New_York,Divine Liturgy
-mac-server-1,2026-07-26,08:25,10:45,streaming,America/New_York,Divine Liturgy
+mac-server-1,2026-07-29,05:25,07:45,streaming,America/New_York,Divine Liturgy
+win-server-1,2026-08-01,17:55,22:15,streaming,America/New_York,Vespers & Midnight Praises (Tasbeha)
+win-server-1,2026-08-02,07:55,10:45,streaming,America/New_York,Divine Liturgy
+mac-server-1,2026-08-02,08:25,10:45,streaming,America/New_York,Divine Liturgy
