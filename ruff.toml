@@ -1,0 +1,4 @@
+# Explicit rule selection so `ruff check .` behavior doesn't silently change
+# when a newer ruff release ships a broader default rule set.
+[lint]
+select = ["E4", "E7", "E9", "F"]
