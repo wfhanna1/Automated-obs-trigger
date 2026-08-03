@@ -43,3 +43,6 @@ id_ed25519
 
 # Bicep build output (generated from main.bicep)
 infra/main.json
+
+# Local git worktrees (created ad hoc by agent tooling; never commit)
+.claude/worktrees/
