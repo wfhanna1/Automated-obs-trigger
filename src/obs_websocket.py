@@ -50,6 +50,14 @@ WS_MAX_RETRIES = 10
 # obsws-python connection timeout in seconds
 WS_TIMEOUT = 10
 
+# How many times to poll OBS output status before concluding the launch flag
+# never took effect. OBS may take a moment to bring the output up after a
+# --startstreaming / --startrecording launch, so we poll rather than check once.
+ACTIVE_STATUS_MAX_CHECKS = 5
+
+# Seconds between output-status polls
+ACTIVE_STATUS_INTERVAL = 2
+
 
 def _connect(local_port: int, password: str) -> obs.ReqClient:
     """
@@ -127,6 +135,61 @@ def start_action(local_port: int, password: str, action: str) -> None:
         raise
     finally:
         client.disconnect()
+
+
+def verify_action_active(local_port: int, password: str, action: str) -> None:
+    """
+    Confirm OBS finished starting and the requested output is actually running.
+
+    Used after a CLI-flag launch (--startstreaming / --startrecording), where no
+    explicit start_action call is made and nothing else proves OBS came up. A
+    successful WebSocket connection proves OBS finished starting — i.e. it is NOT
+    stuck on the "did not shut down properly" safe-mode dialog. An active output
+    proves the launch flag took effect. Either failure raises a clear RuntimeError
+    so the caller fails loudly instead of reporting a stream that never went live.
+
+    Args:
+        local_port: Tunnelled local port for OBS WebSocket.
+        password:   OBS WebSocket password.
+        action:     "recording" or "streaming".
+
+    Raises:
+        ValueError:   If action is not "recording" or "streaming".
+        RuntimeError: If OBS is unreachable (not started / stuck on a dialog) or
+                      the output never became active within the poll window.
+    """
+    if action not in ("recording", "streaming"):
+        raise ValueError(f"Unknown action '{action}'. Must be 'recording' or 'streaming'.")
+
+    # _connect retries; a failure here means OBS never finished starting — the
+    # signature of a machine stuck on the safe-mode dialog.
+    client = _connect(local_port, password)
+    try:
+        for attempt in range(1, ACTIVE_STATUS_MAX_CHECKS + 1):
+            if action == "recording":
+                active = client.get_record_status().output_active
+            else:
+                active = client.get_stream_status().output_active
+            if active:
+                logger.info("Verified OBS %s is active (localhost:%d).", action, local_port)
+                return
+            logger.debug(
+                "OBS %s not active yet on localhost:%d (check %d/%d).",
+                action, local_port, attempt, ACTIVE_STATUS_MAX_CHECKS,
+            )
+            if attempt < ACTIVE_STATUS_MAX_CHECKS:
+                time.sleep(ACTIVE_STATUS_INTERVAL)
+    finally:
+        client.disconnect()
+
+    logger.error(
+        "OBS reachable but %s never became active on localhost:%d after %d checks.",
+        action, local_port, ACTIVE_STATUS_MAX_CHECKS,
+    )
+    raise RuntimeError(
+        f"OBS is reachable but {action} never became active on localhost:{local_port} "
+        f"after {ACTIVE_STATUS_MAX_CHECKS} checks. The launch flag may not have taken effect."
+    )
 
 
 def stop_action(local_port: int, password: str, action: str) -> None:

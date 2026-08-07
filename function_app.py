@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from schedule_loader import load_schedule          # noqa: E402
 from remote_controller import launch_obs, kill_obs, obs_tunnel, run_close_exe   # noqa: E402
-from obs_websocket import start_action, stop_action  # noqa: E402
+from obs_websocket import start_action, stop_action, verify_action_active  # noqa: E402
 from event_publisher import publish_stream_started  # noqa: E402
 from queue_manager import purge_scheduled_messages  # noqa: E402
 from telemetry import configure_telemetry          # noqa: E402
@@ -260,7 +260,13 @@ def obs_control_function(msg: func.ServiceBusMessage) -> None:
                 scene=scene, launch_action=action if use_cli_flags else None,
             )
             with obs_tunnel(host, ssh_port, ssh_user, ssh_key_pem, ws_port) as local_port:
-                if not use_cli_flags:
+                if use_cli_flags:
+                    # OBS was launched with --startstreaming/--startrecording, so no
+                    # WebSocket start call is made. Verify OBS actually came up and the
+                    # output is live — otherwise a machine stuck on the safe-mode dialog
+                    # would be reported as a successful start (and falsely announced).
+                    verify_action_active(local_port, obs_password, action)
+                else:
                     # CLI flags not used — use WebSocket to switch scene and start action.
                     start_action(local_port, obs_password, action)
             logger.info("OBS %s started successfully on %s.", action, server_id)

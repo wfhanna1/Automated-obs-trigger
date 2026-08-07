@@ -312,18 +312,20 @@ class TestStartCommandSceneBranching:
     Verify the two branches in the 'start' path:
 
       scene is set   -> launch_obs gets scene + start_action=action,
-                        start_action() WebSocket call is SKIPPED.
+                        start_action() WebSocket call is SKIPPED, but
+                        verify_action_active() IS called to confirm OBS came up.
       scene is None  -> launch_obs gets scene=None + start_action=None,
                         start_action() WebSocket call IS made.
     """
 
+    @patch("function_app.verify_action_active")
     @patch("function_app.start_action")
     @patch("function_app.obs_tunnel")
     @patch("function_app.launch_obs")
     @patch("function_app._get_kv_secret")
     @patch("function_app._load_servers_config")
     @patch("function_app._get_env")
-    def test_start_action_ws_skipped_when_scene_is_set(
+    def test_start_action_ws_skipped_but_verified_when_scene_is_set(
         self,
         mock_get_env,
         mock_load_servers,
@@ -331,9 +333,11 @@ class TestStartCommandSceneBranching:
         mock_launch_obs,
         mock_obs_tunnel,
         mock_start_action,
+        mock_verify,
         fake_pem,
     ):
-        """When the server config has a scene, the WebSocket start_action call must not happen."""
+        """When the server config has a scene, start_action is skipped but the
+        CLI-flag launch must still be verified via verify_action_active."""
         from function_app import obs_control_function
 
         _setup_standard_mocks(
@@ -344,6 +348,7 @@ class TestStartCommandSceneBranching:
         obs_control_function(_make_sb_message(MAC_BODY))
 
         mock_start_action.assert_not_called()
+        mock_verify.assert_called_once()
 
     @patch("function_app.start_action")
     @patch("function_app.obs_tunnel")
@@ -373,6 +378,7 @@ class TestStartCommandSceneBranching:
 
         mock_start_action.assert_called_once()
 
+    @patch("function_app.verify_action_active")
     @patch("function_app.start_action")
     @patch("function_app.obs_tunnel")
     @patch("function_app.launch_obs")
@@ -387,6 +393,7 @@ class TestStartCommandSceneBranching:
         mock_launch_obs,
         mock_obs_tunnel,
         mock_start_action,
+        mock_verify,
         fake_pem,
     ):
         """launch_obs must receive scene='Small Chapel' and launch_action=action when scene is configured."""
