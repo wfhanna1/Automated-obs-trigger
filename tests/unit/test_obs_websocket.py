@@ -20,8 +20,10 @@ from obs_websocket import (
     _connect,
     start_action,
     stop_action,
+    verify_action_active,
     WS_MAX_RETRIES,
     WS_RETRY_INTERVAL,
+    ACTIVE_STATUS_MAX_CHECKS,
 )
 
 
@@ -136,6 +138,89 @@ class TestConnect:
 
         with pytest.raises(RuntimeError, match="localhost:8765"):
             _connect(8765, "password")
+
+
+# ---------------------------------------------------------------------------
+# verify_action_active tests
+# ---------------------------------------------------------------------------
+
+class TestVerifyActionActive:
+
+    @staticmethod
+    def _client_with_active(action, active):
+        """Build a mock ReqClient whose stream/record status reports `active`."""
+        client = MagicMock()
+        status = MagicMock()
+        status.output_active = active
+        if action == "streaming":
+            client.get_stream_status.return_value = status
+        else:
+            client.get_record_status.return_value = status
+        return client
+
+    @patch("obs_websocket._connect")
+    def test_streaming_active_returns_without_error(self, mock_connect):
+        mock_connect.return_value = self._client_with_active("streaming", True)
+        verify_action_active(12345, "password", "streaming")  # must not raise
+
+    @patch("obs_websocket._connect")
+    def test_recording_active_returns_without_error(self, mock_connect):
+        mock_connect.return_value = self._client_with_active("recording", True)
+        verify_action_active(12345, "password", "recording")  # must not raise
+
+    @patch("obs_websocket.time.sleep")
+    @patch("obs_websocket._connect")
+    def test_streaming_never_active_raises_runtime_error(self, mock_connect, mock_sleep):
+        mock_connect.return_value = self._client_with_active("streaming", False)
+        with pytest.raises(RuntimeError, match="never became active"):
+            verify_action_active(12345, "password", "streaming")
+
+    @patch("obs_websocket.time.sleep")
+    @patch("obs_websocket._connect")
+    def test_polls_until_output_becomes_active(self, mock_connect, mock_sleep):
+        """Output goes active on the 3rd poll — verify must succeed, not raise."""
+        client = MagicMock()
+        inactive, active = MagicMock(), MagicMock()
+        inactive.output_active = False
+        active.output_active = True
+        client.get_stream_status.side_effect = [inactive, inactive, active]
+        mock_connect.return_value = client
+
+        verify_action_active(12345, "password", "streaming")
+
+        assert client.get_stream_status.call_count == 3
+
+    @patch("obs_websocket.time.sleep")
+    @patch("obs_websocket._connect")
+    def test_gives_up_after_max_checks(self, mock_connect, mock_sleep):
+        client = self._client_with_active("streaming", False)
+        mock_connect.return_value = client
+        with pytest.raises(RuntimeError):
+            verify_action_active(12345, "password", "streaming")
+        assert client.get_stream_status.call_count == ACTIVE_STATUS_MAX_CHECKS
+
+    @patch("obs_websocket._connect")
+    def test_unreachable_obs_propagates_connect_error(self, mock_connect):
+        """A machine stuck on the safe-mode dialog never accepts the WebSocket;
+        _connect raises and verify_action_active must surface it, not swallow it."""
+        mock_connect.side_effect = RuntimeError("Could not connect to OBS WebSocket")
+        with pytest.raises(RuntimeError, match="Could not connect"):
+            verify_action_active(12345, "password", "streaming")
+
+    @patch("obs_websocket._connect")
+    def test_unknown_action_raises_before_connecting(self, mock_connect):
+        with pytest.raises(ValueError, match="Unknown action"):
+            verify_action_active(12345, "password", "broadcasting")
+        mock_connect.assert_not_called()
+
+    @patch("obs_websocket.time.sleep")
+    @patch("obs_websocket._connect")
+    def test_client_disconnected_even_when_never_active(self, mock_connect, mock_sleep):
+        client = self._client_with_active("streaming", False)
+        mock_connect.return_value = client
+        with pytest.raises(RuntimeError):
+            verify_action_active(12345, "password", "streaming")
+        client.disconnect.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
