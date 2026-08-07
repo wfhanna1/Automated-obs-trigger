@@ -25,8 +25,8 @@ on:
   workflow_dispatch:
     inputs:
       server_id:
-        description: 'Server ID to target (must match an entry in servers.yaml)'
-        default: 'win-server-1'
+        description: 'Server ID to target, or "all" for every server (must match servers.yaml)'
+        default: 'all'
         required: false
       action:
         description: 'OBS action: recording or streaming'
@@ -42,12 +42,54 @@ on:
     types:
       - completed
 
+# The full server roster exercised by the automatic post-deploy run and by a
+# manual dispatch with server_id=all. Add new servers here as they are onboarded.
+env:
+  ALL_SERVERS: '["win-server-1", "mac-server-1"]'
+
 jobs:
-  smoke-test:
-    name: Service Bus Smoke Test
+  # Resolve which servers to test into a JSON array the smoke-test job fans out
+  # over. A manual dispatch may target one server or "all"; the automatic
+  # post-deploy run always exercises every server so a machine-specific
+  # regression (e.g. an OBS safe-mode dialog on one host) can't hide.
+  setup:
+    name: Resolve targets
     runs-on: ubuntu-latest
     # For workflow_run triggers, only run when the deployment succeeded.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      servers: ${{ steps.pick.outputs.servers }}
+      action: ${{ steps.pick.outputs.action }}
+      command: ${{ steps.pick.outputs.command }}
+    steps:
+      - name: Pick servers, action, command
+        id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            sid="${{ inputs.server_id }}"
+            if [ -z "$sid" ] || [ "$sid" = "all" ] || [ "$sid" = "both" ]; then
+              echo "servers=$ALL_SERVERS" >> "$GITHUB_OUTPUT"
+            else
+              echo "servers=[\"$sid\"]" >> "$GITHUB_OUTPUT"
+            fi
+            echo "action=${{ inputs.action }}" >> "$GITHUB_OUTPUT"
+            echo "command=${{ inputs.command }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "servers=$ALL_SERVERS" >> "$GITHUB_OUTPUT"
+            echo "action=recording" >> "$GITHUB_OUTPUT"
+            echo "command=start" >> "$GITHUB_OUTPUT"
+          fi
+
+  smoke-test:
+    name: Smoke test (${{ matrix.server }})
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      # Run every server even if one fails, so a single wedged machine does not
+      # mask the health of the others.
+      fail-fast: false
+      matrix:
+        server: ${{ fromJson(needs.setup.outputs.servers) }}
 
     steps:
       - name: Check out repository
@@ -66,28 +108,15 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Resolve test parameters
-        id: params
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "server_id=${{ inputs.server_id }}" >> $GITHUB_OUTPUT
-            echo "action=${{ inputs.action }}" >> $GITHUB_OUTPUT
-            echo "command=${{ inputs.command }}" >> $GITHUB_OUTPUT
-          else
-            echo "server_id=win-server-1" >> $GITHUB_OUTPUT
-            echo "action=recording" >> $GITHUB_OUTPUT
-            echo "command=start" >> $GITHUB_OUTPUT
-          fi
-
       - name: Run smoke test
         run: |
           python scripts/smoke_test.py \
             --sb-connection-string "${{ secrets.AZURE_SERVICE_BUS_CONNECTION }}" \
             --app-insights-name obs-scheduler-ai-xheofbriqbtrw \
             --resource-group obs-scheduler-rg \
-            --server-id "${{ steps.params.outputs.server_id }}" \
-            --action "${{ steps.params.outputs.action }}" \
-            --command "${{ steps.params.outputs.command }}"
+            --server-id "${{ matrix.server }}" \
+            --action "${{ needs.setup.outputs.action }}" \
+            --command "${{ needs.setup.outputs.command }}"
 
       - name: Log out of Azure
         if: always()
