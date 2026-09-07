@@ -1,5 +1,7 @@
 server_id,date,start_time,stop_time,action,timezone,title
-mac-server-1,2026-09-02,05:25,07:45,streaming,America/New_York,Divine Liturgy
-win-server-1,2026-09-05,17:55,22:15,streaming,America/New_York,Vespers & Midnight Praises (Tasbeha)
-win-server-1,2026-09-06,07:55,10:45,streaming,America/New_York,Divine Liturgy
-mac-server-1,2026-09-06,08:25,10:45,streaming,America/New_York,Divine Liturgy
+mac-server-1,2026-09-09,05:25,07:45,streaming,America/New_York,Divine Liturgy
+win-server-1,2026-09-10,18:55,20:15,streaming,America/New_York,Vespers of the Feast of Nayrouz
+win-server-1,2026-09-11,08:25,10:45,streaming,America/New_York,Divine Liturgy - Feast of Nayrouz
+win-server-1,2026-09-12,17:55,22:15,streaming,America/New_York,Vespers & Midnight Praises (Tasbeha)
+win-server-1,2026-09-13,07:55,10:45,streaming,America/New_York,Divine Liturgy
+mac-server-1,2026-09-13,08:25,10:45,streaming,America/New_York,Divine Liturgy
