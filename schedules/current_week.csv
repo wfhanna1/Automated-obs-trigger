@@ -1,4 +1,5 @@
 server_id,date,start_time,stop_time,action,timezone,title
 mac-server-1,2026-09-16,05:25,07:45,streaming,America/New_York,Divine Liturgy
+win-server-1,2026-09-19,13:55,15:15,streaming,America/New_York,The Wedding ceremony of Sylvia Agaibi and Jesse Shuman
 win-server-1,2026-09-19,17:55,22:15,streaming,America/New_York,Vespers & Midnight Praises (Tasbeha)
 win-server-1,2026-09-20,07:55,10:45,streaming,America/New_York,Divine Liturgy
