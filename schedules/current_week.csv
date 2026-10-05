@@ -1,6 +1,6 @@
 server_id,date,start_time,stop_time,action,timezone,title
-win-server-1,2026-09-28,08:25,10:45,streaming,America/New_York,Divine Liturgy - Feast of the Cross
-mac-server-1,2026-09-29,05:25,07:45,streaming,America/New_York,Divine Liturgy - Feast of the Cross
-win-server-1,2026-10-03,17:55,22:15,streaming,America/New_York,Vespers & Midnight Praises (Tasbeha)
-win-server-1,2026-10-04,07:55,10:45,streaming,America/New_York,Divine Liturgy
-mac-server-1,2026-10-04,08:25,10:45,streaming,America/New_York,Divine Liturgy
+mac-server-1,2026-10-07,05:25,07:45,streaming,America/New_York,Divine Liturgy
+win-server-1,2026-10-10,07:25,09:45,streaming,America/New_York,Divine Liturgy
+win-server-1,2026-10-10,17:55,22:15,streaming,America/New_York,Vespers & Midnight Praises (Tasbeha)
+win-server-1,2026-10-11,07:55,10:45,streaming,America/New_York,Divine Liturgy
+mac-server-1,2026-10-11,08:25,10:45,streaming,America/New_York,Divine Liturgy
